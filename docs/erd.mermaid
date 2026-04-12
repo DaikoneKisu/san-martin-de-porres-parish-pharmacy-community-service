@@ -1,0 +1,219 @@
+---
+title: Sistema de Gestión para la Farmacia
+config:
+  layout: elk
+  theme: dark
+---
+erDiagram
+	direction TB
+
+  %% ── MÓDULO MÉDICO ─────────────────────────────────────────────
+
+  %% Añadir la edad del paciente en lenguaje natural al front, mediante librerías de parseo de fechas (e.x., Luxon)
+  %% Considerar uso de API de localización (e.x., Google Places Autocomplete API, alternativas con tier gratuito bueno como https://locationiq.com/, etc.) para rellenar en front el lugar_nac y residencia
+  %% Usar libphonenumber-js en front para el telefono
+	Paciente {
+		UUID id PK ""  
+		Text nombre  "Los nombres y apellidos del paciente."  
+		Text cedula UK "La cédula de identidad del paciente, en formato (V|E)\d+."  
+		Date fecha_nac  "La fecha en que nació el paciente." 
+		Text genero  "Género biológico del paciente (masculino o femenino)."  
+		Text telefono  "El número de teléfono del paciente. Formato E.164"  
+		Text lugar_nac  "Lugar en que nació el paciente. Preferiblemente, de más específico a menos específico."  
+		Text residencia  "Lugar en el que reside actualmente el paciente. Preferiblemente, de más específico a menos específico."  
+	}
+
+	HistorialMedico {
+		UUID id PK ""  
+		DateTime ultima_actualizacion  "Fecha en la que se creó o actualizó un antecedente por última vez. [Computado]"  
+	}
+
+	Antecedente {
+		UUID id PK ""  
+		Text descripcion  "Detalle textual del antecedente médico relevante, puede incluir el nombre de la enfermedad y el estado actual. Ej: Alergia a la penicilina (confirmada por reacción anafiláctica en la infancia)." 
+		DateTime fecha_registro "Fecha en que se registró el antecedente. [Opcional]"  
+		File[] adjuntos  "Imagenes u otro tipo de archivos que describen o dan soporte al antecedente. [Opcional]"  
+		DateTime ultima_actualizacion  ""  
+	}
+
+  CategoriaAntecedente {
+    UUID id PK ""
+    TEXT nombre UK "Nombre de la categoría a la que puede pertenecer un antecedente médico. Ej: patológico, quirúrgico, alérgico, familiar, traumático. [Minúsculas]"
+  }
+
+  %% Usar libphonenumber-js en front para el telefono
+	Personal {
+		UUID id PK ""
+		Text nombre  "Los nombres y apellidos del personal."  
+		Text cedula UK "La cédula de identidad del personal, en formato (V|E)\d+."  
+		Text telefono  "El número de teléfono del personal. Formato E.164."
+		Text[] roles  "Los roles del personal, puede tener múltiples. Son 4: administrador, secretario, doctor, farmaceuta."  
+	}
+
+  %% estado_paciente y diagnostico son opcionales para que se puedan agendar citas
+  Cita {
+		UUID id PK,FK ""  
+		DateTime fecha_hora  "La fecha y hora en que se realizó o realizará la cita."  
+		Text motivo  "Razón por la que se realiza la cita."  
+		Text estado_paciente  "Colección de parámetros fisiológicos y biométricos clave, incluyendo signos vitales (ej. tensión arterial) y resultados de análisis de laboratorio (ej. glicemia, colesterol), que describen la condición actual de salud del paciente. [Opcional]"  
+		Text diagnostico  "Identificación de las enfermedades, condiciones o problemas de salud determinado por el médico durante la evaluación de la cita. [Opcional]"  
+		Number precio_consulta  ""  
+		File[] adjuntos  "Imagenes u otro tipo de archivos que describen o dan soporte al estado del paciente."
+	}
+
+  Recipe {
+    UUID id PK ""
+    Text indicaciones "Detalle de las instrucciones, tratamientos, y/o recomendaciones prescritas o aplicadas por el médico al paciente durante o después de la evaluación. Puede incluir medicación, dosis, terapias, y cambios en el estilo de vida."
+    Boolean es_externo ""
+    File adjunto_externo ""
+  }
+
+  %% ── MÓDULO INVENTARIO ─────────────────────────────────────────
+
+  Insumo {
+    UUID id PK "ID compartido con hijos"
+    Enum tipo "medicamento / material quirurgico"
+    Text numero_lote "Lote del fabricante"
+    Date fecha_vencimiento "Fecha de caducidad"
+    Float cantidad "Cantidad en stock al momento de registrar la entrada"
+    Float stock_disponible "Cantidad actual [Computado]"
+    Decimal precio_unitario_referencial "Costo de referencia por unidad de empaque"
+  }
+
+  Laboratorio {
+    UUID id PK
+    Text nombre "Ej: Pfizer, Bayer, Genfar"
+  }
+
+  Marca {
+    UUID id PK
+    Text nombre "Ej: Advil, 'Genérico Genfar'"
+    Boolean es_generico "True si no tiene nombre comercial propio"
+  }
+
+  CategoriaMedicamento {
+		UUID id PK ""  
+		Text nombre UK "Ej: circulatorio, hipertensivo. [Minúsculas]"  
+   }
+
+  Medicamento {
+    UUID id PK
+    Text nombre "[Computado] si Marca.es_generico es True, entonces nombre es `${PrincipioActivo.nombre} ${Medicamento_PrincipioActivo.concentracion} - ${Laboratorio.nombre}`; sino, nombre es `${Marca.nombre}`"
+  }
+
+  PresentacionMedicamento {
+    UUID id PK, FK "Apunta a Insumo.id"
+    Number cantidad "Ej: 10, 20 (comprimidos por blíster)"
+  }
+
+  MaterialQuirurgico {
+    UUID id PK, FK "Apunta a Insumo.id"
+    Text nombre "Ej: Sutura de seda"
+  }
+
+  PrincipioActivo {
+    UUID id PK
+    Text nombre UK "Ej: ibuprofeno. [Minúsculas]"
+  }
+
+  Medicamento_PrincipioActivo {
+    UUID id PK
+    Text concentracion "Ej: 400mg, 10ml"
+  }
+
+  Excipiente {
+    UUID id PK
+    Text nombre UK "Ej: lactosa. [Minúsculas]"
+  }
+
+  Medicamento_Excipiente {
+    UUID id PK
+    Text concentracion "Ej: 400mg, 10ml"
+  }
+
+  ViaAdministracion {
+    UUID id PK
+    Text nombre UK "Ej: oral, intravenoso, tópico. [Minúsculas]"
+  }
+
+  FormaFarmaceutica {
+    UUID id PK
+    Text nombre UK "Ej: cápsula, járabe, comprimidos, ampollas. [Minúsculas]"
+  }
+
+  Empaque {
+    UUID id PK
+    Text nombre UK "Ej: blíster, frasco. [Minúsculas]"
+  }
+
+  InsumoConsumido {
+    UUID id PK
+    Float cantidad_despachada
+    Decimal precio_unitario "Costo por unidad de empaque al momento del consumo"
+  }
+
+  %% ── MÓDULO DONACIONES ─────────────────────────────────────────
+
+	Donante {
+		UUID id PK ""  
+		Text nombre  ""  
+		Text pais  ""
+		Text contacto  ""  
+		Boolean es_fijo  ""  
+	}
+
+  Donacion {
+		UUID id PK,FK ""  
+		Date fecha_recepcion  ""  
+		Text observaciones  ""  
+	}
+
+	ItemDonacion {
+		UUID id PK ""  
+	}
+
+  %% ── MÓDULO CONTABLE ───────────────────────────────────────────
+
+	AsientoContable {
+		UUID id PK ""  
+		DateTime fecha  ""  
+		Text tipo  ""  
+		Text concepto  ""  
+		Number monto  ""  
+	}
+
+	Contabilizable {
+		UUID id PK ""  
+		Text tipo  ""  
+	}
+
+  Laboratorio||--o{Marca:"fabrica"
+  Marca||--o{Medicamento:"identifica"
+	Paciente||--o|HistorialMedico:"tiene"
+	HistorialMedico||--|{Antecedente:"contiene"
+  Paciente||--o{Cita:"tiene"
+  Recipe|o--o|Cita:"es_para"
+  %% Es obligatorio que el personal de una cita tenga el rol doctor
+	Cita}o--||Personal:"atendida_por"
+	Cita||--o{InsumoConsumido:"consume"
+  %% De ser necesario, puede indicarse que habrá una próxima cita como seguimiento.
+	Cita||--o|Cita:"siguiente"
+  Insumo||--o|PresentacionMedicamento : "es_tipo"
+  Insumo||--o|MaterialQuirurgico : "es_tipo"
+  Antecedente}|--|{CategoriaAntecedente:"clasificado_en"
+  Medicamento}|--|{CategoriaMedicamento:"clasificado_en"
+  Medicamento||--|{Medicamento_PrincipioActivo:"compuesto_por"
+  Medicamento||--|{PresentacionMedicamento:"se_ofrece_en"
+  Medicamento||--|{Medicamento_Excipiente:"contiene"
+  Excipiente||--|{Medicamento_Excipiente:"esta_en"
+  PrincipioActivo||--|{Medicamento_PrincipioActivo:"es_parte_de"
+  ViaAdministracion||--|{PresentacionMedicamento:"definida_por"
+  FormaFarmaceutica||--|{PresentacionMedicamento:"definida_por"
+  Empaque||--|{PresentacionMedicamento:"definida_por"
+	InsumoConsumido}o--||Insumo:"referencia"
+	Donacion}o--||Donante:"proviene_de"
+	Donacion||--|{ItemDonacion:"contiene"
+	ItemDonacion}|--||Insumo:"registra_entrada_de"
+	AsientoContable||--||Contabilizable:"originado_en"
+	Cita||--||Contabilizable:"es"
+	Donacion||--||Contabilizable:"es"
