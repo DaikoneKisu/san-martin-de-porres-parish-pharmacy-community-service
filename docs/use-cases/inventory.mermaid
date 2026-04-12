@@ -1,0 +1,16 @@
+flowchart LR
+    P([Personal])
+
+    subgraph Inventario
+        UC12(Registrar insumo)
+        UC13(Consultar inventario)
+        UC14(Editar insumo)
+        UC15(Registrar dispensación)
+        UC16(Consultar stock disponible)
+        UC17(Gestionar catálogo medicamentos)
+        UC18(Gestionar catálogo mat. quirúrgicos)
+        UC19(Gestionar categorías)
+    end
+
+    P --> UC12 & UC13 & UC14 & UC15 & UC16 & UC17 & UC18 & UC19
+    UC15 -.->|include| UC16

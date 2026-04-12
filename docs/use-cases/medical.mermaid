@@ -1,0 +1,25 @@
+flowchart LR
+    P([Personal])
+    D([Doctor])
+    ADM([Administrador])
+
+    subgraph Médico
+        UC1(Registrar paciente)
+        UC2(Consultar paciente)
+        UC3(Editar paciente)
+        UC4(Registrar antecedente)
+        UC5(Editar antecedente)
+        UC6(Agendar cita)
+        UC7(Registrar resultado de cita)
+        UC8(Generar récipe PDF)
+        UC9(Registrar récipe externo)
+        UC10(Consultar historial médico)
+        UC11(Configurar tiempo entre citas)
+    end
+
+    P   --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC9 & UC10
+    D   --> UC7
+    ADM --> UC11
+
+    UC7 -.->|include| UC8
+    UC6 -.->|include| UC_check_agenda(Verificar disponibilidad médico)

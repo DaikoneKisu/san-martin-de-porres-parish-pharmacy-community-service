@@ -179,7 +179,7 @@ erDiagram
 		DateTime fecha  ""  
 		Text tipo  ""  
 		Text concepto  ""  
-		Number monto  ""  
+		Number monto  ""
 	}
 
 	Contabilizable {
@@ -214,6 +214,7 @@ erDiagram
 	Donacion}o--||Donante:"proviene_de"
 	Donacion||--|{ItemDonacion:"contiene"
 	ItemDonacion}|--||Insumo:"registra_entrada_de"
-	AsientoContable||--||Contabilizable:"originado_en"
+  %% Es opcional que un asiento contable esté asociado a una entidad contabilizable, para permitir registrar asientos contables generales que no estén directamente relacionados con una cita, donación, etc.
+	AsientoContable||--o|Contabilizable:"originado_en"
 	Cita||--||Contabilizable:"es"
 	Donacion||--||Contabilizable:"es"

@@ -1,0 +1,100 @@
+erDiagram
+
+  %% Solo visible para administradores
+  %% personal_id nullable = acción del sistema (efecto colateral automático)
+  %% datos_anteriores nullable = acción de registro (no hay estado previo)
+  %% AsientoContable no tiene edicion por principio de integridad contable
+
+  AuditoriaPaciente {
+    UUID     id               PK
+    UUID     paciente_id      FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaAntecedente {
+    UUID     id               PK
+    UUID     antecedente_id   FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaCita {
+    UUID     id               PK
+    UUID     cita_id          FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion_resultado / cancelacion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaInsumo {
+    UUID     id               PK
+    UUID     insumo_id        FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion / dispensacion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaDonante {
+    UUID     id               PK
+    UUID     donante_id       FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaDonacion {
+    UUID     id               PK
+    UUID     donacion_id      FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro / edicion"
+    JSON     datos_anteriores     "nullable"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  AuditoriaAsientoContable {
+    UUID     id               PK
+    UUID     asiento_id       FK
+    UUID     personal_id      FK  "nullable"
+    Text     accion               "registro"
+    JSON     datos_nuevos
+    DateTime fecha
+  }
+
+  %% Registra accesos de lectura a consultas contables
+  AuditoriaConsultaContable {
+    UUID     id               PK
+    UUID     personal_id      FK
+    Text     tipo_consulta        "libro_diario / estado_resultados"
+    JSON     parametros           "nullable — filtros y rango de fechas aplicados"
+    DateTime fecha
+  }
+
+  AuditoriaPaciente          }o--||   Paciente            : "audita"
+  AuditoriaPaciente          }o--o|   Personal            : "realizada_por"
+  AuditoriaAntecedente       }o--||   Antecedente         : "audita"
+  AuditoriaAntecedente       }o--o|   Personal            : "realizada_por"
+  AuditoriaCita              }o--||   Cita                : "audita"
+  AuditoriaCita              }o--o|   Personal            : "realizada_por"
+  AuditoriaInsumo            }o--||   Insumo              : "audita"
+  AuditoriaInsumo            }o--o|   Personal            : "realizada_por"
+  AuditoriaDonante           }o--||   Donante             : "audita"
+  AuditoriaDonante           }o--o|   Personal            : "realizada_por"
+  AuditoriaDonacion          }o--||   Donacion            : "audita"
+  AuditoriaDonacion          }o--o|   Personal            : "realizada_por"
+  AuditoriaAsientoContable   }o--||   AsientoContable     : "audita"
+  AuditoriaAsientoContable   }o--o|   Personal            : "realizada_por"
+  AuditoriaConsultaContable  }o--||   Personal            : "realizada_por"
