@@ -26,7 +26,7 @@ bcv: Banco Central de Venezuela {
   tooltip: "Provee la tasa de cambio oficial USD/VES mediante su portal público"
 }
 
-r2: Cloudflare R2 {
+s3-like-storage: UploadThing {
   shape: rectangle
   style.fill: "#f1f5f9"
   tooltip: "Almacenamiento de archivos: adjuntos médicos, fotos de récipes externos, PDFs cacheados"
@@ -41,5 +41,5 @@ turso: Turso {
 # Relaciones
 personal -> sanmart: "Gestiona pacientes, citas,\ninventario, donaciones\ny contabilidad\n[HTTPS / Navegador móvil]"
 sanmart -> bcv: "Obtiene tasa de cambio\nUSD/VES diaria\n[HTTPS / Scraping]"
-sanmart -> r2: "Almacena y recupera\narchivos adjuntos\n[HTTPS / S3 API]"
+sanmart -> s3-like-storage: "Almacena y recupera\narchivos adjuntos\n[HTTPS / S3 API]"
 sanmart -> turso: "Lee y escribe\ndatos del sistema\n[HTTPS / libsql]"

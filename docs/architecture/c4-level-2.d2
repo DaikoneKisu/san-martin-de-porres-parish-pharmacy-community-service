@@ -18,7 +18,7 @@ bcv: BCV {
   style.stroke-dash: 3
 }
 
-r2: Cloudflare R2 {
+s3-like-storage: UploadThing {
   shape: rectangle
   style.fill: "#f1f5f9"
   style.stroke-dash: 3
@@ -38,7 +38,7 @@ sanmart: Sanmart Gestión Farmacéutica {
   web: apps/web {
     shape: rectangle
     style.fill: "#dcfce7"
-    tooltip: "SvelteKit · TanStack Query · shadcn-svelte · TipTap\nDiseño mobile-first. Sirve la interfaz de usuario.\nDesplegado en Fly.io"
+    tooltip: "SvelteKit · TanStack Query · shadcn-svelte · TipTap\nDiseño mobile-first. Sirve la interfaz de usuario.\nDesplegado en Vercel"
     label: "apps/web\n[SvelteKit · Svelte 5]\nFrontend mobile-first"
   }
 
@@ -71,5 +71,5 @@ sanmart.web -> sanmart.contracts: "importa tipos\ny cliente Eden"
 sanmart.api -> sanmart.contracts: "exporta tipos\ny cliente Eden"
 sanmart.api -> sanmart.bcvpkg: "solicita tasa\nUSD/VES"
 sanmart.api -> turso: "lee y escribe\nvía Prisma + libsql\n[HTTPS]"
-sanmart.api -> r2: "sube y recupera\narchivos\n[HTTPS · S3 API]"
+sanmart.api -> s3-like-storage: "sube y recupera\narchivos\n[HTTPS · S3 API]"
 sanmart.bcvpkg -> bcv: "scraping de\ntasa oficial\n[HTTPS]"
