@@ -1,0 +1,75 @@
+direction: right
+
+title: |md
+  # Sanmart Gestión Farmacéutica
+  ## C4 — Nivel 2: Contenedores
+|
+
+# Actor
+personal: Personal de la Farmacia {
+  shape: person
+  style.fill: "#dbeafe"
+}
+
+# Sistemas externos
+bcv: BCV {
+  shape: rectangle
+  style.fill: "#f1f5f9"
+  style.stroke-dash: 3
+}
+
+r2: Cloudflare R2 {
+  shape: rectangle
+  style.fill: "#f1f5f9"
+  style.stroke-dash: 3
+}
+
+turso: Turso {
+  shape: cylinder
+  style.fill: "#f1f5f9"
+  style.stroke-dash: 3
+}
+
+# Contenedores del sistema
+sanmart: Sanmart Gestión Farmacéutica {
+  style.fill: "#f0fdf4"
+  style.stroke: "#16a34a"
+
+  web: apps/web {
+    shape: rectangle
+    style.fill: "#dcfce7"
+    tooltip: "SvelteKit · TanStack Query · shadcn-svelte · TipTap\nDiseño mobile-first. Sirve la interfaz de usuario.\nDesplegado en Fly.io"
+    label: "apps/web\n[SvelteKit · Svelte 5]\nFrontend mobile-first"
+  }
+
+  api: apps/api {
+    shape: rectangle
+    style.fill: "#dcfce7"
+    tooltip: "Bun · Elysia · Prisma · BetterAuth\nExpone una JSON REST API con autenticación JWT.\nDesplegado en Fly.io"
+    label: "apps/api\n[Bun · Elysia]\nJSON REST API"
+  }
+
+  contracts: packages/contracts {
+    shape: rectangle
+    style.fill: "#fef9c3"
+    tooltip: "Tipos TypeScript compartidos entre web y api.\nIncluye el cliente Eden Treaty generado por Elysia."
+    label: "packages/contracts\n[TypeScript]\nTipos compartidos · Eden Treaty"
+  }
+
+  bcvpkg: packages/bcv-api {
+    shape: rectangle
+    style.fill: "#fef9c3"
+    tooltip: "Wrapper del scraping al portal del BCV.\nIncluye validación de certificado TLS, AIA chasing\ny caché en memoria con TTL configurable."
+    label: "packages/bcv-api\n[Bun · ky · cheerio]\nCliente BCV con caché"
+  }
+}
+
+# Relaciones internas
+personal -> sanmart.web: "Usa el sistema\n[HTTPS · Navegador móvil]"
+sanmart.web -> sanmart.api: "Llamadas tipadas\nvía Eden Treaty\n[HTTPS · JSON]"
+sanmart.web -> sanmart.contracts: "importa tipos\ny cliente Eden"
+sanmart.api -> sanmart.contracts: "exporta tipos\ny cliente Eden"
+sanmart.api -> sanmart.bcvpkg: "solicita tasa\nUSD/VES"
+sanmart.api -> turso: "lee y escribe\nvía Prisma + libsql\n[HTTPS]"
+sanmart.api -> r2: "sube y recupera\narchivos\n[HTTPS · S3 API]"
+sanmart.bcvpkg -> bcv: "scraping de\ntasa oficial\n[HTTPS]"

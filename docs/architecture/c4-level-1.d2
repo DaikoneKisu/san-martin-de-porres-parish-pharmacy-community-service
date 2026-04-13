@@ -1,0 +1,45 @@
+direction: right
+
+title: |md
+  # Sanmart Gestión Farmacéutica
+  ## C4 — Nivel 1: Contexto del Sistema
+|
+
+# Actores
+personal: Personal de la Farmacia {
+  shape: person
+  style.fill: "#dbeafe"
+  tooltip: "Administrador, Secretario, Doctor, Farmaceuta"
+}
+
+# Sistema principal
+sanmart: Sanmart Gestión Farmacéutica {
+  shape: rectangle
+  style.fill: "#dcfce7"
+  tooltip: "Sistema web mobile-first de gestión para la Farmacia de la Parroquia San Martín de Porres"
+}
+
+# Sistemas externos
+bcv: Banco Central de Venezuela {
+  shape: rectangle
+  style.fill: "#f1f5f9"
+  tooltip: "Provee la tasa de cambio oficial USD/VES mediante su portal público"
+}
+
+r2: Cloudflare R2 {
+  shape: rectangle
+  style.fill: "#f1f5f9"
+  tooltip: "Almacenamiento de archivos: adjuntos médicos, fotos de récipes externos, PDFs cacheados"
+}
+
+turso: Turso {
+  shape: cylinder
+  style.fill: "#f1f5f9"
+  tooltip: "Base de datos SQLite distribuida en la nube"
+}
+
+# Relaciones
+personal -> sanmart: "Gestiona pacientes, citas,\ninventario, donaciones\ny contabilidad\n[HTTPS / Navegador móvil]"
+sanmart -> bcv: "Obtiene tasa de cambio\nUSD/VES diaria\n[HTTPS / Scraping]"
+sanmart -> r2: "Almacena y recupera\narchivos adjuntos\n[HTTPS / S3 API]"
+sanmart -> turso: "Lee y escribe\ndatos del sistema\n[HTTPS / libsql]"
