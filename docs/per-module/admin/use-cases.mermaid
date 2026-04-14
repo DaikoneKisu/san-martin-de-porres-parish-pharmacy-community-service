@@ -1,0 +1,18 @@
+flowchart LR
+  ADM([Administrador])
+
+  subgraph Auth
+    UC_register(Registrar personal)
+    UC_edit_staff(Editar personal)
+    UC_deactivate(Desactivar personal)
+  end
+
+  ADM --> UC_register
+  ADM --> UC_edit_staff
+  ADM --> UC_deactivate
+
+  subgraph Médico
+    UC11(Configurar tiempo entre citas)
+  end
+
+  ADM --> UC11

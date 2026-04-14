@@ -1,0 +1,13 @@
+flowchart LR
+  NA([Usuario no autenticado])
+  P([Personal])
+
+  subgraph Auth
+    UC_login(Iniciar sesión)
+    UC_logout(Cerrar sesión)
+    UC_recover(Recuperar contraseña)
+  end
+
+  NA --> UC_login
+  NA --> UC_recover
+  P  --> UC_logout

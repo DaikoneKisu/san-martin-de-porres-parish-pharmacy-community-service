@@ -1,0 +1,18 @@
+---
+title: Asientos contables y consultas
+---
+flowchart TD
+    S([Inicio]) --> DASH[Dashboard]
+  DASH --> LIBRO[Libro diario - Secretario · Administrador]
+  LIBRO --> ASIENTO_DETAIL[Detalle de asiento]
+  ASIENTO_DETAIL --> E1([Fin])
+  DASH --> ESTADO[Estado de resultados - Secretario · Administrador]
+  ESTADO --> FILTRO[Seleccionar período mensual · trimestral · personalizado]
+  FILTRO --> ESTADO
+  ESTADO --> E2([Fin])
+  DASH --> EGRESO[Registrar egreso puntual - Todos los roles]
+  EGRESO --> MONEDA{¿Monto en USD?}
+  MONEDA -->|Sí| CONV[Convertir a VES vía bcv-api]
+  CONV --> GUARDAR
+  MONEDA -->|No| GUARDAR[Guardar asiento]
+  GUARDAR --> E3([Fin])

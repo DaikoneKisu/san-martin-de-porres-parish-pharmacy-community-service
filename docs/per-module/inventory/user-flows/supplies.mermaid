@@ -1,0 +1,26 @@
+---
+title: Registrar insumo y dispensar
+---
+flowchart TD
+  S([Inicio]) --> DASH[Dashboard]
+  DASH --> INS_LIST[Listado de inventario]
+  INS_LIST --> INS_NEW[Registrar insumo]
+  INS_NEW -->|Seleccionar tipo| TIPO{Tipo}
+  TIPO -->|Medicamento| SEL_MED[Seleccionar medicamento del catálogo]
+  TIPO -->|Material quirúrgico| SEL_MAT[Seleccionar material del catálogo]
+  SEL_MED --> INS_FORM[Completar datos lote · vencimiento · cantidad · precio]
+  SEL_MAT --> INS_FORM
+  INS_FORM -->|Guardar| INS_DETAIL[Detalle de insumo]
+  INS_LIST --> INS_DETAIL
+  INS_DETAIL --> INS_EDIT[Editar insumo]
+  INS_EDIT -->|Guardar| INS_DETAIL
+  INS_DETAIL --> INS_DISP[Registrar dispensación]
+  INS_DISP -->|Confirmar cantidad| INS_DETAIL
+  INS_DETAIL --> E1([Fin])
+  INS_LIST --> CAT_NAV[Catálogos]
+  CAT_NAV --> CAT_MED[Medicamentos]
+  CAT_NAV --> CAT_MAT[Materiales]
+  CAT_NAV --> CAT_MISC[Categorías · Principios activos Laboratorios · Formas · Empaques]
+  CAT_MED --> E2([Fin])
+  CAT_MAT --> E2
+  CAT_MISC --> E2

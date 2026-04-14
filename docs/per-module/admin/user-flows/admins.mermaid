@@ -1,0 +1,15 @@
+---
+title: Administración
+---
+flowchart TD
+  S([Inicio]) --> DASH[Dashboard]
+  DASH -->|Solo Administrador| ADMIN[Administración]
+  ADMIN --> PER_LIST[Listado de personal]
+  PER_LIST --> PER_NEW[Registrar personal]
+  PER_NEW -->|Guardar| PER_LIST
+  PER_LIST --> PER_DETAIL[Detalle de personal]
+  PER_DETAIL --> PER_EDIT[Editar]
+  PER_EDIT -->|Guardar| PER_DETAIL
+  PER_DETAIL --> PER_DEACT[Desactivar]
+  PER_DEACT -->|Confirmar| PER_LIST
+  ADMIN --> SYSCONFIG[Configuración del sistema]

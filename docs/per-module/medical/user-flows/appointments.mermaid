@@ -1,0 +1,19 @@
+---
+title: Realizar cita, generar récipe y registrar récipe externo
+---
+flowchart TD
+  S([Inicio]) --> CIT_LIST[Listado de citas]
+  CIT_LIST --> CIT_DETAIL[Detalle de cita]
+  CIT_DETAIL -->|Solo Doctor| CIT_RESULT[Registrar resultado]
+  CIT_RESULT --> WYSIWYG[Editor WYSIWYG motivo · estado · diagnóstico · indicaciones]
+  WYSIWYG -->|Guardar resultado| CIT_DETAIL
+  CIT_DETAIL --> PDF[Generar récipe PDF]
+  PDF --> PREVIEW[Previsualizar récipe]
+  PREVIEW -->|Imprimir| PRINT[Impresión / Descarga]
+  PRINT --> E1([Fin])
+  PREVIEW -->|Volver| CIT_DETAIL
+  CIT_LIST --> REC_EXT[Registrar récipe externo]
+  REC_EXT --> FOTO[Fotografiar récipe físico]
+  FOTO -->|Seleccionar paciente si es interno| REC_EXT
+  REC_EXT -->|Guardar| DISP[Registrar dispensación]
+  DISP --> E2([Fin])

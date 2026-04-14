@@ -1,0 +1,12 @@
+---
+title: Auditoría
+---
+flowchart TD
+  S([Inicio]) --> DASH[Dashboard]
+  DASH -->|Solo Administrador| AUD[Auditoría]
+  AUD --> AUD_PAC[Auditoría pacientes]
+  AUD --> AUD_CIT[Auditoría citas]
+  AUD --> AUD_INS[Auditoría insumos]
+  AUD --> AUD_DON[Auditoría donaciones]
+  AUD --> AUD_CONT[Auditoría asientos]
+  AUD --> AUD_ACC[Accesos a consultas contables]

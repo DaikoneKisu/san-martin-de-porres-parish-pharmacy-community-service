@@ -1,0 +1,19 @@
+---
+title: Registrar paciente y agendar cita
+---
+flowchart TD
+  S([Inicio]) --> DASH[Dashboard]
+  DASH --> PAC_LIST[Listado de pacientes]
+  PAC_LIST --> PAC_NEW[Registrar paciente]
+  PAC_NEW -->|Guardar| PAC_DETAIL[Detalle del paciente]
+  PAC_LIST --> PAC_DETAIL
+  PAC_DETAIL --> ANT_NEW[Registrar antecedente]
+  ANT_NEW -->|Guardar| PAC_DETAIL
+  PAC_DETAIL --> ANT_EDIT[Editar antecedente]
+  ANT_EDIT -->|Guardar| PAC_DETAIL
+  PAC_DETAIL --> CIT_NEW[Agendar cita]
+  DASH --> CIT_LIST[Listado de citas]
+  CIT_LIST --> CIT_NEW
+  CIT_NEW -->|Seleccionar médico disponible| CIT_NEW
+  CIT_NEW -->|Guardar| CIT_DETAIL[Detalle de cita]
+  CIT_DETAIL --> E([Fin])

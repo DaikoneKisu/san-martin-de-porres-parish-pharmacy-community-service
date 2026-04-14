@@ -1,0 +1,14 @@
+---
+title: Autenticación
+---
+flowchart TD
+  S([Inicio]) --> B{¿Tiene sesión?}
+  B -->|Sí| DASH[Dashboard]
+  B -->|No| LOGIN[Iniciar sesión]
+  LOGIN -->|Credenciales válidas| DASH
+  LOGIN -->|Olvidé contraseña| RECOVER[Solicitar recuperación]
+  RECOVER --> EMAIL[Correo enviado]
+  EMAIL --> CONFIRM[Confirmar nueva contraseña]
+  CONFIRM --> LOGIN
+  DASH --> LOGOUT[Cerrar sesión]
+  LOGOUT --> E([Fin])

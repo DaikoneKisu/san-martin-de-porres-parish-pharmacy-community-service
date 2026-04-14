@@ -1,0 +1,24 @@
+---
+title: Registrar donación
+---
+flowchart TD
+  S([Inicio]) --> DASH[Dashboard]
+  DASH --> DON_LIST[Listado de donaciones]
+  DON_LIST --> DON_NEW[Registrar donación]
+  DON_NEW --> SEL_DON{¿Donante existe?}
+  SEL_DON -->|Sí| SEL_DON_OK[Seleccionar donante]
+  SEL_DON -->|No| DON_NEW2[Registrar nuevo donante]
+  DON_NEW2 -->|Guardar| SEL_DON_OK
+  SEL_DON_OK --> DON_ITEMS[Asociar insumos recibidos]
+  DON_ITEMS --> ITEM_LOOP{¿Agregar otro insumo?}
+  ITEM_LOOP -->|Sí| INS_NEW[Registrar insumo]
+  INS_NEW --> ITEM_LOOP
+  ITEM_LOOP -->|No| DON_CONFIRM[Confirmar donación]
+  DON_CONFIRM -->|Guardar| DON_DETAIL[Detalle de donación]
+  DON_LIST --> DON_DETAIL
+  DON_DETAIL --> E1([Fin])
+  DASH --> DON_LIST2[Listado de donantes]
+  DON_LIST2 --> DON_DETAIL2[Detalle de donante]
+  DON_DETAIL2 --> DON_EDIT[Editar donante]
+  DON_EDIT -->|Guardar| DON_DETAIL2
+  DON_DETAIL2 --> E2([Fin])
