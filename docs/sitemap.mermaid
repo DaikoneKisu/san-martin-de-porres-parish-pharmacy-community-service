@@ -37,7 +37,6 @@ flowchart TD
   subgraph INV["📦 Módulo Inventario"]
     INSUMOS["Inventario"]
     INSUMOS --> INS_LIST["Listado"]
-    INSUMOS --> INS_NEW["Registrar insumo"]
     INSUMOS --> INS_DETAIL["Detalle"]
     INS_DETAIL --> INS_EDIT["Editar"]
     INS_DETAIL --> INS_DISP["Registrar dispensación"]
@@ -55,7 +54,6 @@ flowchart TD
     DONACIONES["Donaciones"]
     DONACIONES --> DON_LIST["Listado"]
     DONACIONES --> DON_NEW["Registrar donación"]
-    DON_NEW --> DON_ITEMS["Asociar insumos"]
     DONACIONES --> DON_DETAIL["Detalle"]
 
     DONANTES["Donantes"]
