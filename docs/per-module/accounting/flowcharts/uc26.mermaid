@@ -1,0 +1,12 @@
+flowchart TD
+  S([Inicio]) --> CONCEPTO[Ingresar concepto y monto]
+  CONCEPTO --> MONEDA{¿Monto ingresado en USD?}
+  MONEDA -->|Sí| TASA[Obtener tasa del día vía bcv-api]
+  TASA --> CONV[Convertir a VES monto_ves = monto_usd x tasa]
+  CONV --> PREVIEW[Mostrar equivalencia y solicitar confirmación]
+  PREVIEW --> CONFIRM{¿Confirma el monto?}
+  CONFIRM -->|No| CONCEPTO
+  CONFIRM -->|Sí| GUARDAR
+  MONEDA -->|No, en VES| GUARDAR[Guardar AsientoContable tipo=egreso · contabilizable_id=null]
+  GUARDAR --> AUD[Registrar AuditoriaAsientoContable accion=registro]
+  AUD --> E([Fin])

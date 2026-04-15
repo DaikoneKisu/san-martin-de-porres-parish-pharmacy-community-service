@@ -1,0 +1,9 @@
+flowchart TD
+  S([Inicio]) --> CONFIRM{¿Confirmar desactivación?}
+
+  CONFIRM -->|No| E3([Fin])
+  CONFIRM -->|Sí| CHECK_SESION{¿Personal tiene sesión activa?}
+  CHECK_SESION -->|Sí| REVOKE[Revocar sesión activa]
+  REVOKE --> DEACT[Marcar Personal como inactivo]
+  CHECK_SESION -->|No| DEACT
+  DEACT --> E3

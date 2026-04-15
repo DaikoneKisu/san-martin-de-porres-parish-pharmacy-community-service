@@ -5,11 +5,13 @@ flowchart LR
     UC_register(Registrar personal)
     UC_edit_staff(Editar personal)
     UC_deactivate(Desactivar personal)
+    UC_activate(Activar personal)
   end
 
   ADM --> UC_register
   ADM --> UC_edit_staff
   ADM --> UC_deactivate
+  ADM --> UC_activate
 
   subgraph Médico
     UC11(Configurar tiempo entre citas)

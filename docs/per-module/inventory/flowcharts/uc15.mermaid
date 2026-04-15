@@ -1,0 +1,14 @@
+flowchart TD
+  S([Inicio]) --> SEL_INS[Seleccionar insumo]
+  SEL_INS --> CHECK_STOCK{¿stock_disponible > 0?}
+  CHECK_STOCK -->|No| BLOCK[Bloquear dispensación]
+  BLOCK --> SHOW_NO_STOCK[Mostrar stock agotado]
+  SHOW_NO_STOCK --> E1([Fin])
+  CHECK_STOCK -->|Sí| CANTIDAD[Ingresar cantidad a dispensar]
+  CANTIDAD --> CHECK_SUFICIENTE{¿Cantidad ≤ stock_disponible?}
+  CHECK_SUFICIENTE -->|No| WARN[Advertir cantidad insuficiente]
+  WARN --> CANTIDAD
+  CHECK_SUFICIENTE -->|Sí| PRECIO[Ingresar precio unitario al momento del despacho]
+  PRECIO --> GUARDAR[Guardar InsumoConsumido]
+  GUARDAR --> AUD[Registrar AuditoriaInsumo accion=dispensacion]
+  AUD --> E2([Fin])

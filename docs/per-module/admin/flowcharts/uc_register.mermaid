@@ -1,0 +1,9 @@
+flowchart TD
+  S([Inicio]) --> FORM_NEW[Completar datos<br>nombre · cédula · email · teléfono · roles]
+
+  FORM_NEW --> CHECK_CI{¿Cédula ya registrada?}
+  CHECK_CI -->|Sí| ERR[Mostrar error de duplicado]
+  ERR --> FORM_NEW
+  CHECK_CI -->|No| GUARDAR_NEW[Guardar Personal credenciales iniciales generadas]
+  GUARDAR_NEW --> NOTIFY[Notificar al nuevo personal con sus credenciales]
+  NOTIFY --> E1([Fin])

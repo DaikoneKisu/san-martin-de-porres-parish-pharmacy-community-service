@@ -1,0 +1,14 @@
+flowchart TD
+  S([Inicio]) --> CHECK_EST{¿La cita ya tiene resultado registrado?}
+  CHECK_EST -->|Sí| READONLY[Mostrar resultado en modo lectura]
+  READONLY --> E1([Fin])
+  CHECK_EST -->|No| EDITOR[Abrir editor WYSIWYG<br>motivo · estado · diagnóstico · indicaciones]
+  EDITOR --> INSUMOS[Seleccionar insumos consumidos con cantidad y precio]
+  INSUMOS --> CHECK_STOCK{¿Stock disponible para todos los insumos?}
+  CHECK_STOCK -->|No| WARN[Advertir insumos sin stock suficiente]
+  WARN --> INSUMOS
+  CHECK_STOCK -->|Sí| GUARDAR[Guardar resultado]
+  GUARDAR --> DESC[Descontar InsumoConsumido del <code>stock_disponible</code> de cada Insumo]
+  DESC --> AUD[Registrar AuditoriaCita accion=edicion_resultado]
+  AUD --> AUD_INS[Registrar AuditoriaInsumo accion=dispensacion por cada insumo]
+  AUD_INS --> E2([Fin])

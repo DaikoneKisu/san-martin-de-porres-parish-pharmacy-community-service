@@ -1,0 +1,9 @@
+flowchart TD
+  S([Inicio]) --> INPUT[Usuario ingresa credenciales]
+  INPUT --> VALID{¿Credenciales válidas?}
+  VALID -->|No| ERR[Mostrar error]
+  ERR --> INPUT
+  VALID -->|Sí| ROL[Identificar roles del Personal]
+  ROL --> PERMS[Cargar permisos según roles]
+  PERMS --> DASH[Redirigir al Dashboard]
+  DASH --> E([Fin])

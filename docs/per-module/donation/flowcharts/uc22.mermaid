@@ -1,0 +1,14 @@
+flowchart TD
+  S([Inicio]) --> SEL_DON{¿Donante existe?}
+  SEL_DON -->|No| NEW_DON[Registrar nuevo donante]
+  NEW_DON --> AUD_DON[Registrar AuditoriaDonante accion=registro]
+  AUD_DON --> SEL_DON_OK[Seleccionar donante]
+  SEL_DON -->|Sí| SEL_DON_OK
+  SEL_DON_OK --> FECHA[Ingresar fecha de recepción y observaciones]
+  FECHA --> INS_LOOP[Registrar insumos recibidos<br><strike>ver flowchart de Registrar insumo uc12</strike>]
+  INS_LOOP --> MAS{¿Agregar otro insumo?}
+  MAS -->|Sí| INS_LOOP
+  MAS -->|No| CONFIRMAR[Confirmar y guardar Donacion como Contabilizable]
+  CONFIRMAR --> ASIENTO[Generar asiento de ingreso originado en Donacion]
+  ASIENTO --> AUD[Registrar AuditoriaDonacion accion=registro]
+  AUD --> E([Fin])

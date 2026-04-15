@@ -1,0 +1,16 @@
+flowchart TD
+  S([Inicio]) --> SEL_TIPO{Tipo de insumo}
+  SEL_TIPO -->|Medicamento| SEL_MED[Buscar medicamento en catálogo]
+  SEL_TIPO -->|Material quirúrgico| SEL_MAT[Buscar material en catálogo]
+  SEL_MED --> EXISTS_MED{¿Existe en el catálogo?}
+  EXISTS_MED -->|No| NEW_MED[Registrar nuevo medicamento en catálogo]
+  NEW_MED --> SEL_MED
+  EXISTS_MED -->|Sí| FORM
+  SEL_MAT --> EXISTS_MAT{¿Existe en el catálogo?}
+  EXISTS_MAT -->|No| NEW_MAT[Registrar nuevo material en catálogo]
+  NEW_MAT --> SEL_MAT
+  EXISTS_MAT -->|Sí| FORM[Completar datos del insumo lote · vencimiento · cantidad · precio referencial]
+  FORM --> GUARDAR[Guardar Insumo cantidad = stock inicial]
+  GUARDAR --> AUD[Registrar AuditoriaInsumo accion=registro]
+  AUD --> ITEM[Crear ItemDonacion vinculando Insumo a Donacion]
+  ITEM --> E([Fin])

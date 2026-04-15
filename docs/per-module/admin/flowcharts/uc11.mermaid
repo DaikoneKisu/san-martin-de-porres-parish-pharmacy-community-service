@@ -1,0 +1,10 @@
+flowchart TD
+  S([Inicio]) --> LOAD[Cargar valores actuales del config.json]
+  LOAD --> FORM[Mostrar formulario con campos validados]
+  FORM --> EDIT[Usuario modifica parámetros]
+  EDIT --> VALID{¿Valores válidos? Ej: tiempo_entre_citas > 0, hora_fin > hora_inicio}
+  VALID -->|No| ERR[Mostrar errores de validación]
+  ERR --> EDIT
+  VALID -->|Sí| GUARDAR[Escribir config.json en el backend]
+  GUARDAR --> RELOAD[Recargar configuración en memoria del servidor]
+  RELOAD --> E([Fin])

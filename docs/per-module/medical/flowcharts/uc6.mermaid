@@ -1,0 +1,12 @@
+flowchart TD
+  S([Inicio]) --> SEL_MED[Seleccionar médico]
+  SEL_MED --> SEL_FECHA[Seleccionar fecha y hora]
+  SEL_FECHA --> CHECK_DISP{¿Médico disponible en ese horario?}
+  CHECK_DISP -->|No — conflicto con cita existente o fuera de horario hábil| ERR1[Mostrar conflicto y sugerir horarios disponibles]
+  ERR1 --> SEL_FECHA
+  CHECK_DISP -->|No — tiempo entre citas insuficiente según configuración| ERR2[Mostrar tiempo mínimo requerido entre citas]
+  ERR2 --> SEL_FECHA
+  CHECK_DISP -->|Sí| SEL_PAC[Seleccionar paciente]
+  SEL_PAC --> GUARDAR[Guardar cita]
+  GUARDAR --> ASIENTO[Generar asiento de ingreso por consulta en Contabilizable]
+  ASIENTO --> E([Fin])
