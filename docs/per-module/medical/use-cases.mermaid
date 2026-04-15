@@ -12,11 +12,12 @@ flowchart LR
     UC7(Registrar resultado de cita)
     UC8(Generar récipe PDF)
     UC9(Registrar récipe externo)
+    UC9B(Consultar récipe externo)
     UC10(Consultar historial médico)
   end
 
-  P   --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC9 & UC10
+  P   --> UC1 & UC2 & UC3 & UC4 & UC5 & UC6 & UC8 & UC9 & UC9B & UC10
   D   --> UC7
 
   UC7 -.->|include| UC8
-  UC6 -.->|include| UC_check_agenda(Verificar disponibilidad médico)
+  UC6 -.->|include| UC_check(Verificar disponibilidad médico)
