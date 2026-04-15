@@ -64,8 +64,13 @@ erDiagram
   Recipe {
     UUID id PK ""
     Text indicaciones "Detalle de las instrucciones, tratamientos, y/o recomendaciones prescritas o aplicadas por el médico al paciente durante o después de la evaluación. Puede incluir medicación, dosis, terapias, y cambios en el estilo de vida."
-    Boolean es_externo ""
-    File adjunto_externo ""
+    Text url_pdf_cache "URL del PDF generado a partir de las indicaciones, para facilitar su descarga y visualización por parte del paciente. [Computado]"
+  }
+
+  RecipeExterno {
+    UUID id PK, FK ""
+    Text indicaciones "Detalle de las instrucciones, tratamientos, y/o recomendaciones prescritas o aplicadas por el médico al paciente durante o después de la evaluación. Puede incluir medicación, dosis, terapias, y cambios en el estilo de vida. En este caso, al ser un recipe externo, las indicaciones son una transcripción del recipe entregado. [Opcional]"
+    File adjunto_externo "Archivo adjunto con las indicaciones externas. Al ser un recipe expedido por un médico externo a la institución, se almacena la imagen y es obligatoria su inclusión para tener un método de evitar la dispensación repetida a un mismo paciente con un mismo recipe externo."
   }
 
   %% ── MÓDULO INVENTARIO ─────────────────────────────────────────
@@ -184,7 +189,7 @@ erDiagram
 
 	Contabilizable {
 		UUID id PK ""  
-		Text tipo  ""  
+		Text tipo  "cita / donacion / recipe_externo"  
 	}
 
   Laboratorio||--o{Marca:"fabrica"
@@ -192,10 +197,11 @@ erDiagram
 	Paciente||--o|HistorialMedico:"tiene"
 	HistorialMedico||--|{Antecedente:"contiene"
   Paciente||--o{Cita:"tiene"
-  Recipe|o--o|Cita:"es_para"
+  Recipe|o--||Cita:"es_para"
   %% Es obligatorio que el personal de una cita tenga el rol doctor
 	Cita}o--||Personal:"atendida_por"
-	Recipe||--o{InsumoConsumido:"consume"
+	Cita||--o{InsumoConsumido:"consume"
+	RecipeExterno||--o{InsumoConsumido:"consume"
   %% De ser necesario, puede indicarse que habrá una próxima cita como seguimiento.
 	Cita||--o|Cita:"siguiente"
   Insumo||--o|PresentacionMedicamento : "es_tipo"
@@ -218,3 +224,4 @@ erDiagram
 	AsientoContable||--o|Contabilizable:"originado_en"
 	Cita||--||Contabilizable:"es"
 	Donacion||--||Contabilizable:"es"
+	RecipeExterno||--||Contabilizable:"es"
