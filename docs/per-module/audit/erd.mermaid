@@ -77,6 +77,15 @@ erDiagram
     JSON datos_nuevos
   }
 
+  %% Solo accion=registro — el récipe externo no se edita una vez registrado
+  AuditoriaRecipeExterno {
+    UUID auditoria_id        PK, FK  "FK → Auditoria.id"
+    UUID recipe_externo_id   FK
+    UUID personal_id         FK     "nullable"
+    Text accion                     "registro"
+    JSON datos_nuevos
+  }
+
   %% Sin datos_anteriores ni datos_nuevos: registro de acceso de lectura
   %% Solo secretarios y administradores ejecutan estas consultas
   AuditoriaConsultaContable {
@@ -88,27 +97,30 @@ erDiagram
 
   %% ── RELACIONES ────────────────────────────────────────────────
 
-  Auditoria                ||--o|   AuditoriaPaciente         : "especializa_en"
-  Auditoria                ||--o|   AuditoriaAntecedente      : "especializa_en"
-  Auditoria                ||--o|   AuditoriaCita             : "especializa_en"
-  Auditoria                ||--o|   AuditoriaInsumo           : "especializa_en"
-  Auditoria                ||--o|   AuditoriaDonante          : "especializa_en"
-  Auditoria                ||--o|   AuditoriaDonacion         : "especializa_en"
-  Auditoria                ||--o|   AuditoriaAsientoContable  : "especializa_en"
-  Auditoria                ||--o|   AuditoriaConsultaContable : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaPaciente         : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaAntecedente      : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaCita             : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaInsumo           : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaDonante          : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaDonacion         : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaAsientoContable  : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaRecipeExterno    : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaConsultaContable : "especializa_en"
 
-  AuditoriaPaciente        }o--||   Paciente                  : "audita"
-  AuditoriaPaciente        }o--o|   Personal                  : "realizada_por"
-  AuditoriaAntecedente     }o--||   Antecedente               : "audita"
-  AuditoriaAntecedente     }o--o|   Personal                  : "realizada_por"
-  AuditoriaCita            }o--||   Cita                      : "audita"
-  AuditoriaCita            }o--o|   Personal                  : "realizada_por"
-  AuditoriaInsumo          }o--||   Insumo                    : "audita"
-  AuditoriaInsumo          }o--o|   Personal                  : "realizada_por"
-  AuditoriaDonante         }o--||   Donante                   : "audita"
-  AuditoriaDonante         }o--o|   Personal                  : "realizada_por"
-  AuditoriaDonacion        }o--||   Donacion                  : "audita"
-  AuditoriaDonacion        }o--o|   Personal                  : "realizada_por"
-  AuditoriaAsientoContable }o--||   AsientoContable           : "audita"
-  AuditoriaAsientoContable }o--o|   Personal                  : "realizada_por"
-  AuditoriaConsultaContable }o--||  Personal                  : "realizada_por"
+  AuditoriaPaciente         }o--||   Paciente                  : "audita"
+  AuditoriaPaciente         }o--o|   Personal                  : "realizada_por"
+  AuditoriaAntecedente      }o--||   Antecedente               : "audita"
+  AuditoriaAntecedente      }o--o|   Personal                  : "realizada_por"
+  AuditoriaCita             }o--||   Cita                      : "audita"
+  AuditoriaCita             }o--o|   Personal                  : "realizada_por"
+  AuditoriaInsumo           }o--||   Insumo                    : "audita"
+  AuditoriaInsumo           }o--o|   Personal                  : "realizada_por"
+  AuditoriaDonante          }o--||   Donante                   : "audita"
+  AuditoriaDonante          }o--o|   Personal                  : "realizada_por"
+  AuditoriaDonacion         }o--||   Donacion                  : "audita"
+  AuditoriaDonacion         }o--o|   Personal                  : "realizada_por"
+  AuditoriaAsientoContable  }o--||   AsientoContable           : "audita"
+  AuditoriaAsientoContable  }o--o|   Personal                  : "realizada_por"
+  AuditoriaRecipeExterno    }o--||   RecipeExterno             : "audita"
+  AuditoriaRecipeExterno    }o--o|   Personal                  : "realizada_por"
+  AuditoriaConsultaContable }o--||   Personal                  : "realizada_por"
