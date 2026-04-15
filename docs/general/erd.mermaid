@@ -195,7 +195,7 @@ erDiagram
   Recipe|o--o|Cita:"es_para"
   %% Es obligatorio que el personal de una cita tenga el rol doctor
 	Cita}o--||Personal:"atendida_por"
-	Cita||--o{InsumoConsumido:"consume"
+	Recipe||--o{InsumoConsumido:"consume"
   %% De ser necesario, puede indicarse que habrá una próxima cita como seguimiento.
 	Cita||--o|Cita:"siguiente"
   Insumo||--o|PresentacionMedicamento : "es_tipo"
