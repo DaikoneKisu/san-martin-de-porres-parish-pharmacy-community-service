@@ -47,8 +47,12 @@ erDiagram
 		Text nombre  "Los nombres y apellidos del personal."  
 		Text cedula UK "La cédula de identidad del personal, en formato (V|E)\d+."  
 		Text telefono  "El número de teléfono del personal. Formato E.164."
-		Text[] roles  "Los roles del personal, puede tener múltiples. Son 4: administrador, secretario, doctor, farmaceuta."  
 	}
+
+  Rol {
+    UUID PK ""
+    Text nombre "Los roles del personal, puede tener múltiples. Son 4: administrador, secretario, doctor, farmaceuta. [Minúsculas]"
+  }
 
   %% estado_paciente y diagnostico son opcionales para que se puedan agendar citas
   Cita {
@@ -192,6 +196,7 @@ erDiagram
 		Text tipo  "cita / donacion / recipe_externo"  
 	}
 
+  Personal}o--|{Rol: "tiene"
   Laboratorio||--o{Marca:"fabrica"
   Marca||--o{Medicamento:"identifica"
 	Paciente||--o|HistorialMedico:"tiene"
