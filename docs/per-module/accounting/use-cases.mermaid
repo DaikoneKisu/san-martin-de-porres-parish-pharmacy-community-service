@@ -1,18 +1,19 @@
 flowchart LR
-    P([Personal])
-    SA([Secretario / Administrador])
+  P([Personal])
+  SA([Secretario / Administrador])
 
-    subgraph Contable
-        UC25(Registrar asiento de ingreso)
-        UC26(Registrar asiento de egreso)
-        UC27(Consultar libro diario)
-        UC28(Consultar estado de resultados)
-        UC29(Convertir USD a VES)
-    end
+  subgraph Contable
+    UC25(Registrar asiento de ingreso)
+    %%  Efecto colateral de: Registrar cita, Registrar donación, Registrar récipe externo
+    UC26(Registrar asiento de egreso)
+    UC27(Consultar libro diario)
+    UC28(Consultar estado de resultados)
+    UC29(Convertir USD a VES)
+  end
 
-    P  --> UC25 & UC26
-    SA --> UC27 & UC28
-    UC25 -.->|include| UC29
-    UC26 -.->|include| UC29
-    UC6_ref(Agendar cita) -.->|extend| UC25
-    UC22_ref(Registrar donación) -.->|extend| UC25
+  P  --> UC25 & UC26
+  SA --> UC27 & UC28
+  UC25 -.->|include| UC29
+  UC26 -.->|include| UC29
+  UC6_ref(Agendar cita) -.->|extend| UC25
+  UC22_ref(Registrar donación) -.->|extend| UC25
