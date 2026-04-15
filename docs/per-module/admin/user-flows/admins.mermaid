@@ -4,6 +4,7 @@ title: Administración
 flowchart TD
   S([Inicio]) --> DASH[Dashboard]
   DASH -->|Solo Administrador| ADMIN[Administración]
+
   ADMIN --> PER_LIST[Listado de personal]
   PER_LIST --> PER_NEW[Registrar personal]
   PER_NEW -->|Guardar| PER_LIST
@@ -12,4 +13,11 @@ flowchart TD
   PER_EDIT -->|Guardar| PER_DETAIL
   PER_DETAIL --> PER_DEACT[Desactivar]
   PER_DEACT -->|Confirmar| PER_LIST
+  PER_LIST --> E1([Fin])
+
   ADMIN --> SYSCONFIG[Configuración del sistema]
+  SYSCONFIG --> CONFIG_AGENDA[Parámetros de agenda<br>tiempo entre citas · horario · días hábiles]
+  SYSCONFIG --> CONFIG_CONT[Parámetros de contabilidad<br>intervalo actualización tasa]
+  CONFIG_AGENDA -->|Guardar| SYSCONFIG
+  CONFIG_CONT -->|Guardar| SYSCONFIG
+  SYSCONFIG --> E2([Fin])
