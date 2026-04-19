@@ -95,6 +95,15 @@ erDiagram
     JSON parametros           "nullable — filtros y rango de fechas"
   }
 
+  AuditoriaPersonal {
+    UUID auditoria_id  PK, FK  "FK → Auditoria.id"
+    UUID personal_id   FK     "Personal auditado"
+    UUID actor_id      FK     "Administrador que realizó la acción. [nullable]"
+    Text accion               "registro / edicion / desactivacion / activacion"
+    JSON datos_anteriores     "nullable — null en registro"
+    JSON datos_nuevos
+  }
+
   %% ── RELACIONES ────────────────────────────────────────────────
 
   Auditoria                 ||--o|   AuditoriaPaciente         : "especializa_en"
@@ -106,6 +115,7 @@ erDiagram
   Auditoria                 ||--o|   AuditoriaAsientoContable  : "especializa_en"
   Auditoria                 ||--o|   AuditoriaRecipeExterno    : "especializa_en"
   Auditoria                 ||--o|   AuditoriaConsultaContable : "especializa_en"
+  Auditoria                 ||--o|   AuditoriaPersonal         : "especializa_en"
 
   AuditoriaPaciente         }o--||   Paciente                  : "audita"
   AuditoriaPaciente         }o--o|   Personal                  : "realizada_por"
@@ -124,3 +134,5 @@ erDiagram
   AuditoriaRecipeExterno    }o--||   RecipeExterno             : "audita"
   AuditoriaRecipeExterno    }o--o|   Personal                  : "realizada_por"
   AuditoriaConsultaContable }o--||   Personal                  : "realizada_por"
+  AuditoriaPersonal         }o--||   Personal                  : "auditado"
+  AuditoriaPersonal         }o--o|   Personal                  : "actor"
