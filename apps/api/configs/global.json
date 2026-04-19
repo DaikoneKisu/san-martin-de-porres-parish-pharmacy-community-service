@@ -1,0 +1,23 @@
+{
+  "agenda": {
+    "tiempo_entre_citas_minutos": 30,
+    "hora_inicio": "08:00",
+    "hora_fin": "17:00",
+    "dias_habiles": [
+      "lunes",
+      "martes",
+      "miercoles",
+      "jueves",
+      "viernes",
+      "sabado"
+    ]
+  },
+  "contabilidad": {
+    "moneda_principal": "VES",
+    "actualizar_tasa_cada_horas": 4
+  },
+  "sistema": {
+    "nombre": "Sanmart Gestión Farmacéutica",
+    "version": "1.0.0"
+  }
+}
