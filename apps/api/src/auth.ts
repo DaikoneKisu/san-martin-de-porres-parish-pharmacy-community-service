@@ -5,6 +5,7 @@ import { env } from "./config";
 
 export const auth = betterAuth({
   ...(env.BETTER_AUTH_URL && { baseURL: env.BETTER_AUTH_URL }),
+  trustedOrigins: [env.FRONTEND_URL],
   database: prismaAdapter(db, { provider: "sqlite" }),
   emailAndPassword: { enabled: true },
   session: {
