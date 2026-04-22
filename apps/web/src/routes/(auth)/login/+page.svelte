@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation';
+  import { goto } from '$app/navigation';
   import { PUBLIC_API_URL } from '$env/static/public';
   import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-svelte';
   import SanmartLogo from '$lib/components/sanmart-logo.svelte';
@@ -48,8 +48,9 @@
           });
         }
 
-        await invalidateAll();
-        goto('/');
+        // Full reload: garantiza que el layout server lea la cookie nueva
+        // y que el componente se desmonte limpio (sin spinner congelado).
+        window.location.replace('/');
       } else {
         const data = await res.json().catch(() => ({})) as { message?: string };
         errorMsg = data.message ?? 'Correo o contraseña incorrectos. Intenta de nuevo.';

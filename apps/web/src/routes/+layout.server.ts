@@ -33,34 +33,25 @@ export const load: LayoutServerLoad = async ({ url, cookies }) => {
 
   if (sessionToken) {
     try {
-      // Reconstruct the BetterAuth cookie header for server-to-server calls.
+      // Single call to /api/me — uses authMacro which internally validates
+      // the BetterAuth session. Returns 200+user on success, 401 on invalid.
       const cookieHeader = `${BETTER_AUTH_COOKIE}=${sessionToken}`;
 
-      const sessionRes = await fetch(`${PUBLIC_API_URL}/api/auth/get-session`, {
+      const meRes = await fetch(`${PUBLIC_API_URL}/api/me`, {
         headers: { cookie: cookieHeader },
       });
 
-      if (sessionRes.ok) {
-        const sessionData = (await sessionRes.json()) as { user?: unknown } | null;
-
-        if (sessionData?.user) {
-          const meRes = await fetch(`${PUBLIC_API_URL}/api/me`, {
-            headers: { cookie: cookieHeader },
-          });
-
-          if (meRes.ok) {
-            const me = (await meRes.json()) as {
-              id: string;
-              email: string;
-              nombre: string;
-              cedula: string;
-              telefono: string;
-              activo: boolean;
-              roles: string[];
-            };
-            session = { user: me };
-          }
-        }
+      if (meRes.ok) {
+        const me = (await meRes.json()) as {
+          id: string;
+          email: string;
+          nombre: string;
+          cedula: string;
+          telefono: string;
+          activo: boolean;
+          roles: string[];
+        };
+        session = { user: me };
       }
     } catch {
       // Network error or API unavailable — treat as unauthenticated.
