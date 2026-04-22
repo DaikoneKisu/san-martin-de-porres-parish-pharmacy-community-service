@@ -1,10 +1,10 @@
 {
-  "name": "@san-martin/contracts",
+  "name": "@sanmart/contracts",
   "module": "src/index.ts",
   "type": "module",
   "private": true,
   "dependencies": {
-    "@san-martin/api": "workspace:^"
+    "@sanmart/api": "workspace:^"
   },
   "peerDependencies": {
     "typescript": "^6.0.3"
