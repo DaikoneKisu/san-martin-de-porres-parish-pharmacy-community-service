@@ -18,7 +18,11 @@
       "Bash(cat tsconfig.base.json)",
       "Bash(bunx prisma *)",
       "Bash(grep \"src\\\\\\\\\\\\\\\\routes\")",
-      "Bash(grep -v \"api\\\\\\\\\\\\\\\\src\")"
+      "Bash(grep -v \"api\\\\\\\\\\\\\\\\src\")",
+      "WebFetch(domain:www.better-auth.com)",
+      "WebSearch",
+      "WebFetch(domain:better-auth.com)",
+      "WebFetch(domain:github.com)"
     ]
   },
   "enabledPlugins": {
