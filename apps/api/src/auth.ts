@@ -1,4 +1,5 @@
 import { betterAuth } from "better-auth";
+import { bearer } from "better-auth/plugins";
 import { prismaAdapter } from "better-auth/adapters/prisma";
 import { db } from "./db";
 import { env } from "./config";
@@ -6,13 +7,7 @@ import { env } from "./config";
 export const auth = betterAuth({
   ...(env.BETTER_AUTH_URL && { baseURL: env.BETTER_AUTH_URL }),
   trustedOrigins: [env.FRONTEND_URL],
-  advanced: {
-    defaultCookieAttributes: {
-      sameSite: "none",
-      secure: true,
-      httpOnly: true,
-    },
-  },
+  plugins: [bearer()],
   database: prismaAdapter(db, { provider: "sqlite" }),
   emailAndPassword: { enabled: true },
   session: {

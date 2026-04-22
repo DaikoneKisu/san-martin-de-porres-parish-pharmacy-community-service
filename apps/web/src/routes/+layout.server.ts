@@ -2,14 +2,6 @@ import { redirect } from "@sveltejs/kit";
 import { PUBLIC_API_URL } from "$env/static/public";
 import type { LayoutServerLoad } from "./$types";
 
-// BetterAuth adds the __Secure- prefix when running over HTTPS.
-// In production (fly.dev → HTTPS) the cookie name is __Secure-better-auth.session_token.
-// In local dev (HTTP) it is just better-auth.session_token.
-const BETTER_AUTH_COOKIE =
-  PUBLIC_API_URL.startsWith("https")
-    ? "__Secure-better-auth.session_token"
-    : "better-auth.session_token";
-
 export const load: LayoutServerLoad = async ({ url, cookies }) => {
   const isAuthRoute =
     url.pathname.startsWith("/login") ||
@@ -33,12 +25,10 @@ export const load: LayoutServerLoad = async ({ url, cookies }) => {
 
   if (sessionToken) {
     try {
-      // Single call to /api/me — uses authMacro which internally validates
-      // the BetterAuth session. Returns 200+user on success, 401 on invalid.
-      const cookieHeader = `${BETTER_AUTH_COOKIE}=${sessionToken}`;
-
+      // Server-to-server call using Bearer token — avoids all cross-origin
+      // cookie issues between the Vercel frontend and the Fly.io API.
       const meRes = await fetch(`${PUBLIC_API_URL}/api/me`, {
-        headers: { cookie: cookieHeader },
+        headers: { Authorization: `Bearer ${sessionToken}` },
       });
 
       if (meRes.ok) {

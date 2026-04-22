@@ -16,8 +16,10 @@ export const POST: RequestHandler = async ({ request, cookies }) => {
     ? Math.max(0, Math.floor((new Date(expiresAt).getTime() - Date.now()) / 1000))
     : 60 * 60 * 24 * 7; // 7 days fallback
 
+  // httpOnly: false so the browser JS (Eden Treaty fetcher) can read the token
+  // and send it as Authorization: Bearer on every API call.
   cookies.set('sanmart.session', token, {
-    httpOnly: true,
+    httpOnly: false,
     secure: true,
     sameSite: 'lax',
     path: '/',
