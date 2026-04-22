@@ -1,7 +1,7 @@
 import type { Prisma } from "@prisma/client";
 import sanitizeHtml from "sanitize-html";
-import { PDFDocument, StandardFonts, rgb } from "pdf-lib";
 import { UTApi, UTFile } from "uploadthing/server";
+import { renderRecipePdf, htmlToPlainText } from "./recipe-pdf";
 import { db } from "../../db";
 import { env, appConfig } from "../../config";
 import { ApiError } from "../../errors";
@@ -63,78 +63,6 @@ async function validateStockTx(
     throw new ApiError(409, "INSUFFICIENT_STOCK", `Stock insuficiente para: ${insumoId}`);
 }
 
-async function generateRecipePdf(
-  indicaciones: string,
-  patientName: string,
-  doctorName: string,
-  systemName: string,
-): Promise<Uint8Array> {
-  const doc = await PDFDocument.create();
-  const font = await doc.embedFont(StandardFonts.Helvetica);
-  const boldFont = await doc.embedFont(StandardFonts.HelveticaBold);
-
-  const page = doc.addPage([595, 842]);
-  const { width, height } = page.getSize();
-  const margin = 50;
-  let y = height - margin;
-
-  const drawText = (text: string, options: { bold?: boolean; size?: number }) => {
-    const f = options.bold ? boldFont : font;
-    const size = options.size ?? 11;
-    page.drawText(text, { x: margin, y, font: f, size, color: rgb(0, 0, 0) });
-    y -= size + 6;
-  };
-
-  drawText(systemName, { bold: true, size: 16 });
-  y -= 4;
-  drawText("Récipe Médico", { bold: true, size: 13 });
-  y -= 8;
-
-  page.drawLine({
-    start: { x: margin, y },
-    end: { x: width - margin, y },
-    thickness: 0.5,
-    color: rgb(0.5, 0.5, 0.5),
-  });
-  y -= 14;
-
-  drawText(`Paciente: ${patientName}`, {});
-  drawText(`Doctor: ${doctorName}`, {});
-  drawText(`Fecha: ${new Date().toLocaleDateString("es-VE")}`, {});
-  y -= 8;
-
-  page.drawLine({
-    start: { x: margin, y },
-    end: { x: width - margin, y },
-    thickness: 0.5,
-    color: rgb(0.5, 0.5, 0.5),
-  });
-  y -= 16;
-
-  const text = stripHtml(indicaciones);
-  const maxWidth = width - 2 * margin;
-  const fontSize = 11;
-  const lineHeight = 17;
-
-  let line = "";
-  for (const word of text.split(/\s+/)) {
-    if (!word) continue;
-    const testLine = line ? `${line} ${word}` : word;
-    if (font.widthOfTextAtSize(testLine, fontSize) > maxWidth && line) {
-      if (y < margin + lineHeight) break;
-      page.drawText(line, { x: margin, y, font, size: fontSize, color: rgb(0, 0, 0) });
-      y -= lineHeight;
-      line = word;
-    } else {
-      line = testLine;
-    }
-  }
-  if (line && y >= margin) {
-    page.drawText(line, { x: margin, y, font, size: fontSize, color: rgb(0, 0, 0) });
-  }
-
-  return doc.save();
-}
 
 // ─── Patients ─────────────────────────────────────────────────────────────────
 
@@ -598,6 +526,27 @@ export class MedicalService {
         recipe: true,
         paciente: true,
         personal: { select: { nombre: true } },
+        insumosConsumidos: {
+          include: {
+            insumo: {
+              include: {
+                presentacionMedicamento: {
+                  include: {
+                    medicamento: {
+                      include: {
+                        marca: { include: { laboratorio: true } },
+                        principiosActivos: { include: { principioActivo: true } },
+                      },
+                    },
+                    formaFarmaceutica: true,
+                    empaque: true,
+                  },
+                },
+                materialQuirurgico: true,
+              },
+            },
+          },
+        },
       },
     });
     if (!cita) throw new ApiError(404, "APPOINTMENT_NOT_FOUND", "Cita no encontrada");
@@ -605,12 +554,49 @@ export class MedicalService {
 
     if (cita.recipe.urlPdfCache) return cita.recipe.urlPdfCache;
 
-    const pdfBytes = await generateRecipePdf(
-      cita.recipe.indicaciones,
-      cita.paciente.nombre,
-      cita.personal.nombre,
-      appConfig.sistema.nombre,
-    );
+    const medicamentos = cita.insumosConsumidos.map((ic) => {
+      const pm = ic.insumo.presentacionMedicamento;
+      const mat = ic.insumo.materialQuirurgico;
+      let nombre: string;
+      let presentacion: string | undefined;
+
+      if (pm) {
+        const med = pm.medicamento;
+        if (med.marca.esGenerico && med.principiosActivos.length > 0) {
+          nombre = med.principiosActivos
+            .map((mpa) => `${mpa.principioActivo.nombre} ${mpa.concentracion}`)
+            .join(" + ");
+          nombre += ` - ${med.marca.laboratorio.nombre}`;
+        } else {
+          nombre = med.marca.nombre;
+        }
+        presentacion = `${pm.formaFarmaceutica.nombre} x ${pm.cantidad}`;
+      } else {
+        nombre = mat?.nombre ?? "Material quirúrgico";
+      }
+
+      return {
+        nombre,
+        presentacion,
+        cantidad: ic.cantidadDespachada,
+        precioUnit: Number(ic.precioUnitario),
+      };
+    });
+
+    const pdfBytes = await renderRecipePdf({
+      numero: cita.recipe.id,
+      fecha: cita.fechaHora,
+      paciente: {
+        nombre: cita.paciente.nombre,
+        cedula: cita.paciente.cedula,
+        fechaNac: cita.paciente.fechaNac,
+      },
+      medico: { nombre: cita.personal.nombre },
+      diagnostico: cita.diagnostico ? htmlToPlainText(cita.diagnostico) : undefined,
+      indicaciones: htmlToPlainText(cita.recipe.indicaciones),
+      medicamentos,
+      sistemaNombre: appConfig.sistema.nombre,
+    });
 
     const file = new UTFile([pdfBytes], `recipe-${cita.recipe.id}.pdf`, {
       type: "application/pdf",
