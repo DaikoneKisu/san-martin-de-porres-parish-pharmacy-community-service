@@ -1,0 +1,7 @@
+{
+  "extends": "../tsconfig.json", // Extends the root config to share base options
+  "compilerOptions": {
+    "rootDir": "../",
+    "noEmit": true
+  }
+}

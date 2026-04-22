@@ -1,0 +1,9 @@
+{
+  "name": "@san-martin/web",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "dependencies": {
+    "@san-martin/contracts": "workspace:^"
+  }
+}

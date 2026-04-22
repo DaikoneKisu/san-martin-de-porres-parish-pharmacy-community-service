@@ -1,0 +1,12 @@
+{
+  "name": "@san-martin/contracts",
+  "module": "src/index.ts",
+  "type": "module",
+  "private": true,
+  "peerDependencies": {
+    "typescript": "^6.0.3"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  }
+}
