@@ -1,3 +1,4 @@
 {
   "extends": "../../tsconfig.base.json",
+  "exclude": ["prisma.config.ts", "scripts"]
 }
