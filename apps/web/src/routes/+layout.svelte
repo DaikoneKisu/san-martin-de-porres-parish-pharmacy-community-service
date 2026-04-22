@@ -6,6 +6,7 @@
 	import { makeQueryClient } from '$lib/query-client';
 	import { Drawer } from 'vaul-svelte';
 	import { Menu, X, LayoutDashboard, Stethoscope, Package, HandHeart, BookOpen, ShieldCheck, Settings } from 'lucide-svelte';
+	import SanmartLogo from '$lib/components/sanmart-logo.svelte';
 	import type { LayoutProps } from './$types';
 
 	let { children, data }: LayoutProps = $props();
@@ -53,7 +54,7 @@
 			<aside class="hidden md:flex md:w-64 md:flex-col md:fixed md:inset-y-0 border-r bg-sidebar text-sidebar-foreground">
 				<div class="flex flex-col flex-1 overflow-y-auto">
 					<div class="flex items-center h-16 px-6 border-b shrink-0">
-						<span class="text-lg font-semibold tracking-tight">Sanmart</span>
+						<SanmartLogo variant="dark" size={140} />
 					</div>
 					<nav class="flex-1 px-3 py-4 space-y-1">
 						{#each navItems as item (item.href)}
@@ -134,7 +135,7 @@
 						</Drawer.Portal>
 					</Drawer.Root>
 
-					<span class="ml-3 text-base font-semibold">Sanmart</span>
+					<SanmartLogo size={110} />
 				</header>
 
 				<!-- Page content -->

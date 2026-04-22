@@ -1,3 +1,61 @@
 @import 'tailwindcss';
 @plugin '@tailwindcss/forms';
 @plugin '@tailwindcss/typography';
+
+@theme {
+  /* ── Brand ── */
+  --color-primary:            #2D6A4F;
+  --color-primary-foreground: #ffffff;
+
+  /* ── Base ── */
+  --color-background:         #F9FAFB;
+  --color-foreground:         #111827;
+
+  --color-card:               #ffffff;
+  --color-card-foreground:    #111827;
+
+  --color-popover:            #ffffff;
+  --color-popover-foreground: #111827;
+
+  /* ── Secondary / Muted ── */
+  --color-secondary:             #f3f4f6;
+  --color-secondary-foreground:  #374151;
+
+  --color-muted:              #f3f4f6;
+  --color-muted-foreground:   #6b7280;
+
+  /* ── Accent (hover states) ── */
+  --color-accent:             #ecfdf5;
+  --color-accent-foreground:  #065f46;
+
+  /* ── Semantic ── */
+  --color-destructive:             #EF4444;
+  --color-destructive-foreground:  #ffffff;
+
+  --color-warning:            #f59e0b;
+  --color-warning-foreground: #ffffff;
+
+  /* ── Form ── */
+  --color-border: #e5e7eb;
+  --color-input:  #e5e7eb;
+  --color-ring:   #2D6A4F;
+
+  /* ── Sidebar ── */
+  --color-sidebar:                    #1B3A2F;
+  --color-sidebar-foreground:         #ecfdf5;
+  --color-sidebar-accent:             rgba(255, 255, 255, 0.10);
+  --color-sidebar-accent-foreground:  #ffffff;
+  --color-sidebar-border:             rgba(255, 255, 255, 0.08);
+
+  /* ── Brand accent (dorado) ── */
+  --color-brand-accent:             #6B4F12;
+  --color-brand-accent-foreground:  #ffffff;
+}
+
+/* Fondo y color base para todo el documento */
+@layer base {
+  body {
+    background-color: var(--color-background);
+    color: var(--color-foreground);
+  }
+}
