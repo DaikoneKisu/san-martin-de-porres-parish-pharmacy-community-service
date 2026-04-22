@@ -2,58 +2,81 @@ import { redirect } from "@sveltejs/kit";
 import { PUBLIC_API_URL } from "$env/static/public";
 import type { LayoutServerLoad } from "./$types";
 
-export const load: LayoutServerLoad = async ({ url, request }) => {
-	const isAuthRoute =
-		url.pathname.startsWith("/login") ||
-		url.pathname.startsWith("/recover-password") ||
-		url.pathname.startsWith("/new-password");
+// BetterAuth adds the __Secure- prefix when running over HTTPS.
+// In production (fly.dev → HTTPS) the cookie name is __Secure-better-auth.session_token.
+// In local dev (HTTP) it is just better-auth.session_token.
+const BETTER_AUTH_COOKIE =
+  PUBLIC_API_URL.startsWith("https")
+    ? "__Secure-better-auth.session_token"
+    : "better-auth.session_token";
 
-	const cookieHeader = request.headers.get("cookie") ?? "";
+export const load: LayoutServerLoad = async ({ url, cookies }) => {
+  const isAuthRoute =
+    url.pathname.startsWith("/login") ||
+    url.pathname.startsWith("/recover-password") ||
+    url.pathname.startsWith("/new-password");
 
-	let session: { user: { id: string; email: string; nombre: string; cedula: string; telefono: string; activo: boolean; roles: string[] } } | null = null;
+  // Read the token we stored on the frontend domain after login.
+  const sessionToken = cookies.get("sanmart.session");
 
-	try {
-		// Verify session with BetterAuth
-		const sessionRes = await fetch(`${PUBLIC_API_URL}/api/auth/get-session`, {
-			headers: { cookie: cookieHeader },
-		});
+  let session: {
+    user: {
+      id: string;
+      email: string;
+      nombre: string;
+      cedula: string;
+      telefono: string;
+      activo: boolean;
+      roles: string[];
+    };
+  } | null = null;
 
-		if (sessionRes.ok) {
-			const sessionData = await sessionRes.json() as { user?: unknown } | null;
-			if (sessionData?.user) {
-				// Load user profile with roles from our /api/me endpoint
-				const meRes = await fetch(`${PUBLIC_API_URL}/api/me`, {
-					headers: { cookie: cookieHeader },
-				});
+  if (sessionToken) {
+    try {
+      // Reconstruct the BetterAuth cookie header for server-to-server calls.
+      const cookieHeader = `${BETTER_AUTH_COOKIE}=${sessionToken}`;
 
-				if (meRes.ok) {
-					const me = await meRes.json() as {
-						id: string;
-						email: string;
-						nombre: string;
-						cedula: string;
-						telefono: string;
-						activo: boolean;
-						roles: string[];
-					};
-					session = { user: me };
-				}
-			}
-		}
-	} catch {
-		// Network error or API unavailable — treat as unauthenticated
-	}
+      const sessionRes = await fetch(`${PUBLIC_API_URL}/api/auth/get-session`, {
+        headers: { cookie: cookieHeader },
+      });
 
-	if (!session && !isAuthRoute) {
-		redirect(302, "/login");
-	}
+      if (sessionRes.ok) {
+        const sessionData = (await sessionRes.json()) as { user?: unknown } | null;
 
-	const isAdminRoute =
-		url.pathname.startsWith("/audit") || url.pathname.startsWith("/admin");
+        if (sessionData?.user) {
+          const meRes = await fetch(`${PUBLIC_API_URL}/api/me`, {
+            headers: { cookie: cookieHeader },
+          });
 
-	if (isAdminRoute && !session?.user.roles.includes("administrador")) {
-		redirect(302, "/");
-	}
+          if (meRes.ok) {
+            const me = (await meRes.json()) as {
+              id: string;
+              email: string;
+              nombre: string;
+              cedula: string;
+              telefono: string;
+              activo: boolean;
+              roles: string[];
+            };
+            session = { user: me };
+          }
+        }
+      }
+    } catch {
+      // Network error or API unavailable — treat as unauthenticated.
+    }
+  }
 
-	return { session };
+  if (!session && !isAuthRoute) {
+    redirect(302, "/login");
+  }
+
+  const isAdminRoute =
+    url.pathname.startsWith("/audit") || url.pathname.startsWith("/admin");
+
+  if (isAdminRoute && !session?.user.roles.includes("administrador")) {
+    redirect(302, "/");
+  }
+
+  return { session };
 };

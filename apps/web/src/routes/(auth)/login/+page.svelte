@@ -29,6 +29,25 @@
       });
 
       if (res.ok) {
+        // BetterAuth sets its cookie on the API domain (fly.dev), which the
+        // browser rejects in a cross-origin context. We extract the token from
+        // the response body and store it as a cookie on our own domain so the
+        // SvelteKit layout server can read it for SSR session verification.
+        const data = await res.json() as {
+          token?: string;
+          session?: { token?: string; expiresAt?: string };
+        };
+        const token = data.token ?? data.session?.token;
+        const expiresAt = data.session?.expiresAt;
+
+        if (token) {
+          await fetch('/api/session', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ token, expiresAt }),
+          });
+        }
+
         await invalidateAll();
         goto('/');
       } else {
