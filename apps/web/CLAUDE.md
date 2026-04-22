@@ -1,3 +1,11 @@
+## Project Configuration
+
+- **Language**: TypeScript
+- **Package Manager**: bun
+- **Add-ons**: playwright, tailwindcss, sveltekit-adapter
+
+---
+
 # Sanmart Web
 
 Frontend del sistema Sanmart Gestión Farmacéutica. Ver `CLAUDE.md` en la raíz del monorepo para contexto global del proyecto, modelo de datos y convenciones.
