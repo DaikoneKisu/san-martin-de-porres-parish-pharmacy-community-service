@@ -10,6 +10,7 @@ export const env = cleanEnv(process.env, {
   DATABASE_URL: str(),
   DATABASE_AUTH_TOKEN: str(),
   BETTER_AUTH_SECRET: str(),
+  BETTER_AUTH_URL: str({ default: "" }),
   UPLOADTHING_TOKEN: str(),
   KNOWN_FINGERPRINTS: str(),
   FRONTEND_URL: str(),
