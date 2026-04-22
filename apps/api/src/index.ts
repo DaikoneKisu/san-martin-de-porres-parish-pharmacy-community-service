@@ -1,5 +1,6 @@
 import { Elysia } from "elysia";
 import { cors } from "@elysiajs/cors";
+import { openapi } from "@elysiajs/openapi";
 import { auth } from "./auth";
 import { env } from "./config";
 import { ApiError } from "./errors";
@@ -10,12 +11,24 @@ import { accountingModule } from "./modules/accounting";
 import { auditModule } from "./modules/audit";
 import { adminModule } from "./modules/admin";
 import { updateTrust } from "@sanmart/bcv-api";
+import { appConfig } from "./config";
 
 updateTrust().then(({ success, error }) => {
   if (!success) console.error("[BCV] Trust update failed on startup:", error?.message);
 });
 
 const app = new Elysia()
+  .use(
+    openapi({
+      documentation: {
+        info: {
+          title: appConfig.sistema.nombre,
+          version: appConfig.sistema.version,
+          description: "API del sistema de gestión farmacéutica Sanmart — Parroquia San Martín de Porres",
+        },
+      },
+    }),
+  )
   .use(
     cors({
       origin: env.FRONTEND_URL,

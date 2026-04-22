@@ -21,7 +21,8 @@ export const env = cleanEnv(process.env, {
 const CONFIG_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "..",
-  "config.json"
+  "configs",
+  "global.json"
 );
 
 type DayOfWeek =
@@ -41,6 +42,7 @@ type AppConfig = {
     dias_habiles: DayOfWeek[];
   };
   contabilidad: {
+    moneda_principal: string;
     actualizar_tasa_cada_horas: number;
   };
   sistema: {
