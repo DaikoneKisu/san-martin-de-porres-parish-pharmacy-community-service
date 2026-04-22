@@ -3,6 +3,9 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "dependencies": {
+    "@san-martin/api": "workspace:^"
+  },
   "peerDependencies": {
     "typescript": "^6.0.3"
   },

@@ -1,5 +1,6 @@
 import ky from "ky";
 import * as cheerio from "cheerio";
+import { DateTime } from "luxon";
 import { ApiError, ErrorCodes } from "./errors.js";
 import { BCV_CAMBIO_OFICIAL_URL } from "./constants.js";
 import { isTlsError } from "./guards.js";
@@ -47,15 +48,19 @@ export async function getBcvDollarExchangeRate({ retry }: { retry?: boolean } = 
 
     // Find the value date by searching for "Fecha Valor:"
     const dateMatch = $("body").text().match(/Fecha Valor:\s*([A-Za-zéÉáÁ]+,?\s*\d{2}\s*[A-Za-z]+\s*\d{4})/);
-    const unformattedValueDate = dateMatch?.[1]?.replace(/\s+/g, ' ');
+    const rawDate = dateMatch?.[1]?.replace(/,/g, '').replace(/\s+/g, ' ');
 
-    if (dateMatch == null || unformattedValueDate == null) {
+    if (dateMatch == null || rawDate == null) {
       throw new ApiError("Could not find value date on the BCV page.", ErrorCodes.BCV_PARSE_ERROR);
     }
 
-    valueDate = new Date(unformattedValueDate).toISOString();
+    const dt = DateTime.fromFormat(rawDate, "EEEE dd MMMM yyyy", { locale: 'es', zone: 'America/Caracas' });
 
-    return { currency, exchangeRate, valueDate };
+    if (!dt.isValid) {
+      throw new ApiError("Invalid value date format.", ErrorCodes.BCV_PARSE_ERROR, new Error(`Invalid DateTime: ${dt.invalidReason}: ${dt.invalidExplanation}`));
+    }
+
+    return { currency, exchangeRate, valueDate: dt.toISODate() };
   } catch (err: unknown) {
     if (err instanceof ApiError) {
       throw new ApiError(err.message, err.code, err);
