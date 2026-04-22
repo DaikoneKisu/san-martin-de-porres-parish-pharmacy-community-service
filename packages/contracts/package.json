@@ -4,10 +4,10 @@
   "type": "module",
   "private": true,
   "dependencies": {
-    "@sanmart/api": "workspace:^"
+    "@elysiajs/eden": "^1.4.9"
   },
-  "peerDependencies": {
-    "typescript": "^6.0.3"
+  "devDependencies": {
+    "@sanmart/api": "workspace:^"
   },
   "exports": {
     ".": "./src/index.ts"

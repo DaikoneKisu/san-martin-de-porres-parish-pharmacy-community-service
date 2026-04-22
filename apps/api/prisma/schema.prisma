@@ -1,0 +1,515 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+// ─── BETTERAUTH ───────────────────────────────────────────────────────────────
+
+model User {
+  id            String   @id
+  name          String
+  email         String   @unique
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+
+  nombre   String
+  cedula   String  @unique
+  telefono String
+  activo   Boolean @default(true)
+
+  sessions Session[]
+  accounts Account[]
+  roles    Rol[]
+
+  citasAtendidas Cita[] @relation("CitaDoctor")
+
+  auditoriasPersonalAuditado AuditoriaPersonal[]       @relation("AuditPersonalAuditado")
+  auditoriasPersonalActor    AuditoriaPersonal[]       @relation("AuditPersonalActor")
+  auditoriasPaciente         AuditoriaPaciente[]
+  auditoriasAntecedente      AuditoriaAntecedente[]
+  auditoriasCita             AuditoriaCita[]
+  auditoriasInsumo           AuditoriaInsumo[]
+  auditoriasDonante          AuditoriaDonante[]
+  auditoriasDonacion         AuditoriaDonacion[]
+  auditoriasAsientoContable  AuditoriaAsientoContable[]
+  auditoriasRecipeExterno    AuditoriaRecipeExterno[]
+  auditoriasConsultaContable AuditoriaConsultaContable[]
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String   @unique
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@unique([providerId, accountId])
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+}
+
+// ─── ADMIN MODULE ─────────────────────────────────────────────────────────────
+
+model Rol {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  users User[]
+}
+
+// ─── MEDICAL MODULE ───────────────────────────────────────────────────────────
+
+model Paciente {
+  id         String   @id @default(cuid())
+  nombre     String
+  cedula     String   @unique
+  fechaNac   DateTime
+  genero     String
+  telefono   String
+  lugarNac   String
+  residencia String
+
+  historialMedico HistorialMedico?
+  citas           Cita[]
+  auditorias      AuditoriaPaciente[]
+}
+
+model HistorialMedico {
+  id                  String    @id @default(cuid())
+  pacienteId          String    @unique
+  paciente            Paciente  @relation(fields: [pacienteId], references: [id])
+  ultimaActualizacion DateTime?
+
+  antecedentes Antecedente[]
+}
+
+model Antecedente {
+  id                  String          @id @default(cuid())
+  historialMedicoId   String
+  historialMedico     HistorialMedico @relation(fields: [historialMedicoId], references: [id])
+  descripcion         String
+  fechaRegistro       DateTime?
+  adjuntos            String          @default("[]")
+  ultimaActualizacion DateTime
+
+  categorias CategoriaAntecedente[]
+  auditorias AuditoriaAntecedente[]
+}
+
+model CategoriaAntecedente {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  antecedentes Antecedente[]
+}
+
+model Cita {
+  id               String         @id @default(cuid())
+  contabilizableId String         @unique
+  contabilizable   Contabilizable @relation(fields: [contabilizableId], references: [id])
+  pacienteId       String
+  paciente         Paciente       @relation(fields: [pacienteId], references: [id])
+  personalId       String
+  personal         User           @relation("CitaDoctor", fields: [personalId], references: [id])
+  fechaHora        DateTime
+  motivo           String
+  estadoPaciente   String?
+  diagnostico      String?
+  precioConsulta   Decimal
+  adjuntos         String         @default("[]")
+  siguienteCitaId  String?        @unique
+  siguienteCita    Cita?          @relation("CitaSiguiente", fields: [siguienteCitaId], references: [id])
+  citaAnterior     Cita?          @relation("CitaSiguiente")
+
+  recipe            Recipe?
+  insumosConsumidos InsumoConsumido[]
+  auditorias        AuditoriaCita[]
+}
+
+model Recipe {
+  id           String  @id @default(cuid())
+  citaId       String  @unique
+  cita         Cita    @relation(fields: [citaId], references: [id])
+  indicaciones String
+  urlPdfCache  String?
+}
+
+model RecipeExterno {
+  id               String         @id @default(cuid())
+  contabilizableId String         @unique
+  contabilizable   Contabilizable @relation(fields: [contabilizableId], references: [id])
+  indicaciones     String?
+  adjuntoExterno   String
+
+  insumosConsumidos InsumoConsumido[]
+  auditorias        AuditoriaRecipeExterno[]
+}
+
+// ─── INVENTORY MODULE ─────────────────────────────────────────────────────────
+
+model Insumo {
+  id                        String   @id @default(cuid())
+  tipo                      String
+  numeroLote                String
+  fechaVencimiento          DateTime
+  cantidad                  Float
+  precioUnitarioReferencial Decimal
+
+  presentacionMedicamento PresentacionMedicamento?
+  materialQuirurgico      MaterialQuirurgico?
+  insumosConsumidos       InsumoConsumido[]
+  itemDonacion            ItemDonacion?
+  auditorias              AuditoriaInsumo[]
+}
+
+model PresentacionMedicamento {
+  id                  String            @id @default(cuid())
+  insumoId            String            @unique
+  insumo              Insumo            @relation(fields: [insumoId], references: [id])
+  medicamentoId       String
+  medicamento         Medicamento       @relation(fields: [medicamentoId], references: [id])
+  viaAdministracionId String
+  viaAdministracion   ViaAdministracion @relation(fields: [viaAdministracionId], references: [id])
+  formaFarmaceuticaId String
+  formaFarmaceutica   FormaFarmaceutica @relation(fields: [formaFarmaceuticaId], references: [id])
+  empaqueId           String
+  empaque             Empaque           @relation(fields: [empaqueId], references: [id])
+  cantidad            Int
+}
+
+model MaterialQuirurgico {
+  id       String @id @default(cuid())
+  insumoId String @unique
+  insumo   Insumo @relation(fields: [insumoId], references: [id])
+  nombre   String
+}
+
+model Laboratorio {
+  id     String  @id @default(cuid())
+  nombre String
+
+  marcas Marca[]
+}
+
+model Marca {
+  id            String      @id @default(cuid())
+  nombre        String
+  esGenerico    Boolean
+  laboratorioId String
+  laboratorio   Laboratorio @relation(fields: [laboratorioId], references: [id])
+
+  medicamentos Medicamento[]
+}
+
+model Medicamento {
+  id      String @id @default(cuid())
+  nombre  String
+  marcaId String
+  marca   Marca  @relation(fields: [marcaId], references: [id])
+
+  categorias        CategoriaMedicamento[]
+  principiosActivos MedicamentoPrincipioActivo[]
+  excipientes       MedicamentoExcipiente[]
+  presentaciones    PresentacionMedicamento[]
+}
+
+model CategoriaMedicamento {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  medicamentos Medicamento[]
+}
+
+model PrincipioActivo {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  medicamentos MedicamentoPrincipioActivo[]
+}
+
+model MedicamentoPrincipioActivo {
+  id                String          @id @default(cuid())
+  medicamentoId     String
+  medicamento       Medicamento     @relation(fields: [medicamentoId], references: [id])
+  principioActivoId String
+  principioActivo   PrincipioActivo @relation(fields: [principioActivoId], references: [id])
+  concentracion     String
+
+  @@unique([medicamentoId, principioActivoId])
+}
+
+model Excipiente {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  medicamentos MedicamentoExcipiente[]
+}
+
+model MedicamentoExcipiente {
+  id            String      @id @default(cuid())
+  medicamentoId String
+  medicamento   Medicamento @relation(fields: [medicamentoId], references: [id])
+  excipienteId  String
+  excipiente    Excipiente  @relation(fields: [excipienteId], references: [id])
+  concentracion String
+
+  @@unique([medicamentoId, excipienteId])
+}
+
+model ViaAdministracion {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  presentaciones PresentacionMedicamento[]
+}
+
+model FormaFarmaceutica {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  presentaciones PresentacionMedicamento[]
+}
+
+model Empaque {
+  id     String @id @default(cuid())
+  nombre String @unique
+
+  presentaciones PresentacionMedicamento[]
+}
+
+model InsumoConsumido {
+  id                 String         @id @default(cuid())
+  citaId             String?
+  cita               Cita?          @relation(fields: [citaId], references: [id])
+  recipeExternoId    String?
+  recipeExterno      RecipeExterno? @relation(fields: [recipeExternoId], references: [id])
+  insumoId           String
+  insumo             Insumo         @relation(fields: [insumoId], references: [id])
+  cantidadDespachada Float
+  precioUnitario     Decimal
+}
+
+// ─── DONATIONS MODULE ─────────────────────────────────────────────────────────
+
+model Donante {
+  id       String  @id @default(cuid())
+  nombre   String
+  pais     String
+  contacto String
+  esFijo   Boolean
+
+  donaciones Donacion[]
+  auditorias AuditoriaDonante[]
+}
+
+model Donacion {
+  id               String         @id @default(cuid())
+  contabilizableId String         @unique
+  contabilizable   Contabilizable @relation(fields: [contabilizableId], references: [id])
+  donanteId        String
+  donante          Donante        @relation(fields: [donanteId], references: [id])
+  fechaRecepcion   DateTime
+  observaciones    String
+
+  items      ItemDonacion[]
+  auditorias AuditoriaDonacion[]
+}
+
+model ItemDonacion {
+  id         String   @id @default(cuid())
+  donacionId String
+  donacion   Donacion @relation(fields: [donacionId], references: [id])
+  insumoId   String   @unique
+  insumo     Insumo   @relation(fields: [insumoId], references: [id])
+}
+
+// ─── ACCOUNTING MODULE ────────────────────────────────────────────────────────
+
+model Contabilizable {
+  id   String @id @default(cuid())
+  tipo String
+
+  cita          Cita?
+  donacion      Donacion?
+  recipeExterno RecipeExterno?
+
+  asientosContables AsientoContable[]
+}
+
+model AsientoContable {
+  id               String          @id @default(cuid())
+  contabilizableId String?
+  contabilizable   Contabilizable? @relation(fields: [contabilizableId], references: [id])
+  fecha            DateTime
+  tipo             String
+  concepto         String
+  monto            Decimal
+
+  auditorias AuditoriaAsientoContable[]
+}
+
+// ─── AUDIT MODULE ─────────────────────────────────────────────────────────────
+
+model Auditoria {
+  id    String   @id @default(cuid())
+  fecha DateTime
+
+  auditoriaPaciente         AuditoriaPaciente?
+  auditoriaAntecedente      AuditoriaAntecedente?
+  auditoriaCita             AuditoriaCita?
+  auditoriaInsumo           AuditoriaInsumo?
+  auditoriaDonante          AuditoriaDonante?
+  auditoriaDonacion         AuditoriaDonacion?
+  auditoriaAsientoContable  AuditoriaAsientoContable?
+  auditoriaRecipeExterno    AuditoriaRecipeExterno?
+  auditoriaConsultaContable AuditoriaConsultaContable?
+  auditoriaPersonal         AuditoriaPersonal?
+}
+
+model AuditoriaPaciente {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  pacienteId      String
+  paciente        Paciente  @relation(fields: [pacienteId], references: [id])
+  personalId      String?
+  personal        User?     @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaAntecedente {
+  auditoriaId     String      @id
+  auditoria       Auditoria   @relation(fields: [auditoriaId], references: [id])
+  antecedenteId   String
+  antecedente     Antecedente @relation(fields: [antecedenteId], references: [id])
+  personalId      String?
+  personal        User?       @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaCita {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  citaId          String
+  cita            Cita      @relation(fields: [citaId], references: [id])
+  personalId      String?
+  personal        User?     @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaInsumo {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  insumoId        String
+  insumo          Insumo    @relation(fields: [insumoId], references: [id])
+  personalId      String?
+  personal        User?     @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaDonante {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  donanteId       String
+  donante         Donante   @relation(fields: [donanteId], references: [id])
+  personalId      String?
+  personal        User?     @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaDonacion {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  donacionId      String
+  donacion        Donacion  @relation(fields: [donacionId], references: [id])
+  personalId      String?
+  personal        User?     @relation(fields: [personalId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}
+
+model AuditoriaAsientoContable {
+  auditoriaId String          @id
+  auditoria   Auditoria       @relation(fields: [auditoriaId], references: [id])
+  asientoId   String
+  asiento     AsientoContable @relation(fields: [asientoId], references: [id])
+  personalId  String?
+  personal    User?           @relation(fields: [personalId], references: [id])
+  accion      String
+  datosNuevos String
+}
+
+model AuditoriaRecipeExterno {
+  auditoriaId     String        @id
+  auditoria       Auditoria     @relation(fields: [auditoriaId], references: [id])
+  recipeExternoId String
+  recipeExterno   RecipeExterno @relation(fields: [recipeExternoId], references: [id])
+  personalId      String?
+  personal        User?         @relation(fields: [personalId], references: [id])
+  accion          String
+  datosNuevos     String
+}
+
+model AuditoriaConsultaContable {
+  auditoriaId  String    @id
+  auditoria    Auditoria @relation(fields: [auditoriaId], references: [id])
+  personalId   String
+  personal     User      @relation(fields: [personalId], references: [id])
+  tipoConsulta String
+  parametros   String?
+}
+
+model AuditoriaPersonal {
+  auditoriaId     String    @id
+  auditoria       Auditoria @relation(fields: [auditoriaId], references: [id])
+  personalId      String
+  personal        User      @relation("AuditPersonalAuditado", fields: [personalId], references: [id])
+  actorId         String?
+  actor           User?     @relation("AuditPersonalActor", fields: [actorId], references: [id])
+  accion          String
+  datosAnteriores String?
+  datosNuevos     String
+}

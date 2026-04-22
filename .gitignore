@@ -35,3 +35,6 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Cached SSL certificates
 *.pem
+
+# Generated declaration files (e.g. from @elysiajs/openapi fromTypes())
+src/**/*.d.ts

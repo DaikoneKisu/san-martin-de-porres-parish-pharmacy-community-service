@@ -3,11 +3,37 @@
   "module": "src/index.ts",
   "type": "module",
   "private": true,
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
-    "dev": "bun run --watch src/index.ts"
+    "dev": "bun run --watch src/index.ts",
+    "migrate": "bun scripts/migrate.ts",
+    "migrate:dry": "bun scripts/migrate.ts --dry",
+    "migrate:apply": "bun scripts/migrate.ts apply",
+    "migrate:mark-applied": "bun scripts/migrate.ts mark-applied"
   },
   "dependencies": {
+    "@elysiajs/cors": "^1.4.1",
+    "@elysiajs/openapi": "^1.4.14",
+    "@libsql/client": "^0.17.2",
+    "@prisma/adapter-libsql": "^7.7.0",
+    "@prisma/client": "^7.7.0",
+    "@react-pdf/renderer": "^4.5.1",
     "@sanmart/bcv-api": "workspace:^",
-    "elysia": "latest"
+    "better-auth": "^1.6.5",
+    "better-svelte-email": "^1.4.0",
+    "elysia": "latest",
+    "envalid": "^8.1.1",
+    "nodemailer": "^8.0.5",
+    "react": "^19.2.5",
+    "sanitize-html": "^2.17.3",
+    "uploadthing": "^7.7.4"
+  },
+  "devDependencies": {
+    "@types/nodemailer": "^8.0.0",
+    "@types/react": "^19.2.14",
+    "@types/sanitize-html": "^2.16.1",
+    "prisma": "^7.7.0"
   }
 }
