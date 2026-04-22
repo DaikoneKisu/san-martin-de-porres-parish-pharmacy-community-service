@@ -1,43 +1,39 @@
 <script lang="ts">
   import { DateTime } from 'luxon';
-  import { ArrowLeft, CheckCircle2, AlertTriangle, Stethoscope } from 'lucide-svelte';
+  import { ArrowLeft, CheckCircle2, Stethoscope, Loader2 } from 'lucide-svelte';
+  import { createQuery, createMutation } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
 
-  // ── Mock data ──────────────────────────────────────────────────────────────
-  const MEDICOS = [
-    { id: 'm1', nombre: 'Dra. García', especialidad: 'Medicina general' },
-    { id: 'm2', nombre: 'Dr. Rodríguez', especialidad: 'Medicina interna' },
-    { id: 'm3', nombre: 'Dr. Pérez', especialidad: 'Medicina general' },
-  ];
+  // ── Queries ────────────────────────────────────────────────────────────────
+  const staffQuery = createQuery({
+    queryKey: ['medical-staff'],
+    queryFn: async () => {
+      const res = await api.api.medical.staff.get();
+      if (res.error) throw new Error('Error al cargar médicos');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
-  const PACIENTES = [
-    { id: '1', nombre: 'Ana Sofía Ramírez Torres', cedula: 'V-12.345.678' },
-    { id: '2', nombre: 'Carlos Medina López', cedula: 'V-9.876.543' },
-    { id: '3', nombre: 'María González Pérez', cedula: 'V-15.432.100' },
-    { id: '4', nombre: 'José Luis Hernández', cedula: 'V-8.001.234' },
-    { id: '5', nombre: 'Luisa Martínez Blanco', cedula: 'V-22.678.901' },
-  ];
+  const patientsQuery = createQuery({
+    queryKey: ['patients'],
+    queryFn: async () => {
+      const res = await api.api.medical.patients.get();
+      if (res.error) throw new Error('Error al cargar pacientes');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
-  const CITAS_EXISTENTES = [
-    { medicoId: 'm1', fecha: '2025-06-03', hora: '09:00' },
-    { medicoId: 'm1', fecha: '2025-06-03', hora: '10:00' },
-    { medicoId: 'm2', fecha: '2025-06-04', hora: '08:00' },
-  ];
-
-  // ── Helper ─────────────────────────────────────────────────────────────────
-  function checkConflicto(medicoId: string, fecha: string, hora: string): string | null {
-    if (!medicoId || !fecha || !hora) return null;
-    const [h, m] = hora.split(':').map(Number);
-    const mins = h * 60 + m;
-    for (const c of CITAS_EXISTENTES) {
-      if (c.medicoId !== medicoId || c.fecha !== fecha) continue;
-      const [ch, cm] = c.hora.split(':').map(Number);
-      const cmins = ch * 60 + cm;
-      if (Math.abs(mins - cmins) < 30) {
-        return `El médico ya tiene una cita a las ${c.hora}. Se requieren al menos 30 min entre citas.`;
-      }
-    }
-    return null;
-  }
+  const rateQuery = createQuery({
+    queryKey: ['exchange-rate'],
+    queryFn: async () => {
+      const res = await api.api.accounting['exchange-rate'].get();
+      if (res.error) throw new Error('Error al obtener tasa BCV');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
 
   // ── State ──────────────────────────────────────────────────────────────────
   let step = $state<'medico-fecha' | 'paciente' | 'confirmado'>('medico-fecha');
@@ -46,30 +42,85 @@
   let hora = $state('');
   let pacienteId = $state('');
   let motivo = $state('');
+  let precioConsultaVES = $state(0);
+  let precioConsultaUSD = $state(0);
+  let precioMoneda = $state<'VES' | 'USD'>('VES');
   let errors = $state<Record<string, string>>({});
-  let disponibilidadChecked = $state(false);
+  let conflictoError = $state('');
 
   // ── Derived ────────────────────────────────────────────────────────────────
-  const conflicto = $derived(checkConflicto(medicoId, fecha, hora));
-  const medicoNombre = $derived(MEDICOS.find((m) => m.id === medicoId)?.nombre ?? '');
-  const pacienteNombre = $derived(PACIENTES.find((p) => p.id === pacienteId)?.nombre ?? '');
+  const medicos = $derived(
+    ($staffQuery.data ?? []).filter((s: any) => s.roles.some((r: any) => r.nombre === 'doctor'))
+  );
+
+  const medicoNombre = $derived(
+    ($staffQuery.data ?? []).find((m: any) => m.id === medicoId)?.nombre ?? ''
+  );
+
+  const pacienteNombre = $derived(
+    ($patientsQuery.data ?? []).find((p: any) => p.id === pacienteId)?.nombre ?? ''
+  );
+
   const fechaFormateada = $derived(
     fecha ? DateTime.fromISO(fecha).setLocale('es').toFormat("EEEE d 'de' LLLL") : ''
   );
 
+  const tasa = $derived.by(() => {
+    const r = $rateQuery.data as { rate?: number } | number | undefined;
+    if (typeof r === 'number') return r;
+    return r?.rate ?? 0;
+  });
+
+  const puedeContinar = $derived(
+    !!medicoId &&
+      !!fecha &&
+      !!hora &&
+      (precioMoneda === 'VES' ? precioConsultaVES > 0 : precioConsultaUSD > 0)
+  );
+
+  // ── Mutation ───────────────────────────────────────────────────────────────
+  const appointmentMutation = createMutation({
+    mutationFn: async () => {
+      const fechaHora = `${fecha}T${hora}:00`;
+      const montoVES =
+        precioMoneda === 'USD' ? precioConsultaUSD * tasa : precioConsultaVES;
+      const res = await api.api.medical.appointments.post({
+        pacienteId,
+        personalId: medicoId,
+        fechaHora,
+        motivo,
+        precioConsulta: montoVES,
+      });
+      if (res.error) {
+        const err = res.error as { code?: string; message?: string };
+        if (err.code === 'SCHEDULE_CONFLICT') {
+          conflictoError =
+            'El médico ya tiene una cita en ese horario. Por favor selecciona otro horario.';
+        } else {
+          conflictoError = err.message ?? 'Error al agendar la cita';
+        }
+        throw new Error(conflictoError);
+      }
+      return res.data!;
+    },
+    onSuccess: () => {
+      step = 'confirmado';
+      conflictoError = '';
+    },
+  });
+
   // ── Handlers ───────────────────────────────────────────────────────────────
-  function handleVerificar() {
+  function handleContinuar() {
     const newErrors: Record<string, string> = {};
     if (!medicoId) newErrors.medico = 'Selecciona un médico.';
     if (!fecha) newErrors.fecha = 'Selecciona una fecha.';
     if (!hora) newErrors.hora = 'Selecciona una hora.';
+    if (precioMoneda === 'VES' && precioConsultaVES <= 0)
+      newErrors.precio = 'Ingresa el precio de la consulta.';
+    if (precioMoneda === 'USD' && precioConsultaUSD <= 0)
+      newErrors.precio = 'Ingresa el precio de la consulta.';
     errors = newErrors;
     if (Object.keys(newErrors).length > 0) return;
-    disponibilidadChecked = true;
-  }
-
-  function handleContinuar() {
-    if (!disponibilidadChecked || !!conflicto) return;
     step = 'paciente';
   }
 
@@ -79,7 +130,7 @@
     if (!motivo.trim()) newErrors.motivo = 'Describe el motivo de la cita.';
     errors = newErrors;
     if (Object.keys(newErrors).length > 0) return;
-    step = 'confirmado';
+    $appointmentMutation.mutate();
   }
 
   function resetForm() {
@@ -89,8 +140,11 @@
     hora = '';
     pacienteId = '';
     motivo = '';
+    precioConsultaVES = 0;
+    precioConsultaUSD = 0;
+    precioMoneda = 'VES';
     errors = {};
-    disponibilidadChecked = false;
+    conflictoError = '';
   }
 
   // ── Shared classes ─────────────────────────────────────────────────────────
@@ -102,11 +156,11 @@
 
 <style>
   :global(:root) {
-    --color-primary: #2D6A4F;
+    --color-primary: #2d6a4f;
   }
 
   .btn-primary {
-    background-color: #2D6A4F;
+    background-color: #2d6a4f;
     color: white;
     border-radius: 0.5rem;
     padding: 0.625rem 1rem;
@@ -118,6 +172,7 @@
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    gap: 0.375rem;
   }
   .btn-primary:disabled {
     opacity: 0.45;
@@ -129,8 +184,8 @@
 
   .btn-outline {
     background-color: transparent;
-    color: #2D6A4F;
-    border: 1px solid #2D6A4F;
+    color: #2d6a4f;
+    border: 1px solid #2d6a4f;
     border-radius: 0.5rem;
     padding: 0.625rem 1rem;
     font-size: 0.875rem;
@@ -143,13 +198,15 @@
     justify-content: center;
   }
   .btn-outline:hover {
-    background-color: #2D6A4F10;
+    background-color: #2d6a4f10;
   }
 </style>
 
 <div class="flex min-h-screen flex-col bg-gray-50">
   <!-- Sticky header -->
-  <header class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3">
+  <header
+    class="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3"
+  >
     <a href="/medical/appointments" class="text-gray-500 hover:text-gray-700">
       <ArrowLeft class="h-5 w-5" />
     </a>
@@ -173,19 +230,19 @@
 
   <!-- ── STEP 1: médico y horario ───────────────────────────────────────── -->
   {:else if step === 'medico-fecha'}
-    <div class="px-4 pt-4 pb-8 flex flex-col gap-4">
-
+    <div class="flex flex-col gap-4 px-4 pb-8 pt-4">
       <!-- Step indicator -->
       <div class="flex items-center gap-2">
-        <!-- Circle 1 (active) -->
-        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white">
+        <div
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white"
+        >
           1
         </div>
         <span class="text-xs font-medium text-gray-900">Médico y horario</span>
-        <!-- Connector -->
         <div class="h-px flex-1 bg-gray-200"></div>
-        <!-- Circle 2 (pending) -->
-        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-500">
+        <div
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gray-200 text-xs font-semibold text-gray-500"
+        >
           2
         </div>
         <span class="text-xs font-medium text-gray-400">Paciente</span>
@@ -199,17 +256,19 @@
         </div>
         <div class="flex flex-col gap-1">
           <label for="medico" class={labelClass}>Médico</label>
-          <select
-            id="medico"
-            class={inputClass}
-            bind:value={medicoId}
-            onchange={() => { disponibilidadChecked = false; }}
-          >
-            <option value="">Seleccionar médico</option>
-            {#each MEDICOS as medico (medico.id)}
-              <option value={medico.id}>{medico.nombre} · {medico.especialidad}</option>
-            {/each}
-          </select>
+          {#if $staffQuery.isPending}
+            <div class="flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              Cargando médicos...
+            </div>
+          {:else}
+            <select id="medico" class={inputClass} bind:value={medicoId}>
+              <option value="">Seleccionar médico</option>
+              {#each medicos as m (m.id)}
+                <option value={m.id}>{m.nombre} · {m.cedula}</option>
+              {/each}
+            </select>
+          {/if}
           {#if errors.medico}
             <p class={errorClass}>{errors.medico}</p>
           {/if}
@@ -220,27 +279,17 @@
       <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4">
         <div>
           <p class="font-semibold text-gray-900">Fecha y hora</p>
-          <p class="text-sm text-gray-500">
-            Horario hábil: 8:00 – 16:00 · Mín. 30 min entre citas.
-          </p>
+          <p class="text-sm text-gray-500">Horario hábil: 8:00 – 16:00.</p>
         </div>
 
         <div class="grid grid-cols-2 gap-3">
-          <!-- Date -->
           <div class="flex flex-col gap-1">
             <label for="fecha" class={labelClass}>Fecha</label>
-            <input
-              id="fecha"
-              type="date"
-              class={inputClass}
-              bind:value={fecha}
-              onchange={() => { disponibilidadChecked = false; }}
-            />
+            <input id="fecha" type="date" class={inputClass} bind:value={fecha} />
             {#if errors.fecha}
               <p class={errorClass}>{errors.fecha}</p>
             {/if}
           </div>
-          <!-- Time -->
           <div class="flex flex-col gap-1">
             <label for="hora" class={labelClass}>Hora</label>
             <input
@@ -250,33 +299,80 @@
               max="16:00"
               class={inputClass}
               bind:value={hora}
-              onchange={() => { disponibilidadChecked = false; }}
             />
             {#if errors.hora}
               <p class={errorClass}>{errors.hora}</p>
             {/if}
           </div>
         </div>
+      </div>
 
-        <!-- Availability feedback -->
-        {#if disponibilidadChecked && conflicto}
-          <div class="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-            <AlertTriangle class="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />
-            <div>
-              <p class="text-xs font-semibold text-amber-800">Conflicto de horario</p>
-              <p class="text-xs text-amber-700">{conflicto}</p>
-            </div>
+      <!-- Card: Precio -->
+      <div class="flex flex-col gap-4 rounded-xl border border-gray-200 bg-white p-4">
+        <div>
+          <p class="font-semibold text-gray-900">Precio de consulta</p>
+          <p class="text-sm text-gray-500">
+            Ingresa el monto.
+            {#if precioMoneda === 'USD' && tasa > 0}
+              Tasa BCV: {tasa.toFixed(2)} Bs.
+            {/if}
+          </p>
+        </div>
+        <div class="flex gap-2">
+          <!-- Currency toggle -->
+          <div class="flex overflow-hidden rounded-lg border border-gray-300">
+            <button
+              type="button"
+              class="px-3 py-2 text-xs font-medium transition-colors {precioMoneda === 'VES'
+                ? 'bg-[#2D6A4F] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'}"
+              onclick={() => (precioMoneda = 'VES')}
+            >
+              VES
+            </button>
+            <button
+              type="button"
+              class="px-3 py-2 text-xs font-medium transition-colors {precioMoneda === 'USD'
+                ? 'bg-[#2D6A4F] text-white'
+                : 'bg-white text-gray-600 hover:bg-gray-50'}"
+              onclick={() => (precioMoneda = 'USD')}
+            >
+              USD
+            </button>
           </div>
-        {:else if disponibilidadChecked && !conflicto && medicoId && fecha && hora}
-          <div class="flex items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-            <CheckCircle2 class="h-4 w-4 shrink-0 text-emerald-600" />
-            <p class="text-xs font-semibold text-emerald-800">Horario disponible</p>
+          <!-- Amount input -->
+          <div class="flex flex-1 flex-col gap-1">
+            {#if precioMoneda === 'VES'}
+              <input
+                id="precio-ves"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                class={inputClass}
+                bind:value={precioConsultaVES}
+              />
+            {:else}
+              <input
+                id="precio-usd"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                class={inputClass}
+                bind:value={precioConsultaUSD}
+              />
+            {/if}
           </div>
+        </div>
+        {#if precioMoneda === 'USD' && precioConsultaUSD > 0 && tasa > 0}
+          <p class="text-xs text-gray-500">
+            Equivale a {(precioConsultaUSD * tasa).toFixed(2)} Bs.
+          </p>
         {/if}
-
-        <button type="button" onclick={handleVerificar} class="btn-outline">
-          Verificar disponibilidad
-        </button>
+        {#if errors.precio}
+          <p class={errorClass}>{errors.precio}</p>
+        {/if}
       </div>
 
       <!-- Continue button -->
@@ -284,7 +380,7 @@
         type="button"
         onclick={handleContinuar}
         class="btn-primary"
-        disabled={!disponibilidadChecked || !!conflicto}
+        disabled={!puedeContinar}
       >
         Continuar →
       </button>
@@ -292,19 +388,19 @@
 
   <!-- ── STEP 2: paciente ───────────────────────────────────────────────── -->
   {:else if step === 'paciente'}
-    <div class="px-4 pt-4 pb-8 flex flex-col gap-4">
-
+    <div class="flex flex-col gap-4 px-4 pb-8 pt-4">
       <!-- Step indicator -->
       <div class="flex items-center gap-2">
-        <!-- Circle 1 (done) -->
-        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white">
+        <div
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white"
+        >
           ✓
         </div>
         <span class="text-xs font-medium text-gray-400">Médico y horario</span>
-        <!-- Connector -->
         <div class="h-px flex-1 bg-[#2D6A4F]"></div>
-        <!-- Circle 2 (active) -->
-        <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white">
+        <div
+          class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F] text-xs font-semibold text-white"
+        >
           2
         </div>
         <span class="text-xs font-medium text-gray-900">Paciente</span>
@@ -313,14 +409,16 @@
       <!-- Summary card -->
       <div class="flex items-center gap-3 rounded-xl border border-gray-200 bg-gray-50 p-3">
         <Stethoscope class="h-5 w-5 shrink-0 text-gray-400" />
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-gray-900 truncate">{medicoNombre}</p>
-          <p class="text-xs capitalize text-gray-500 truncate">{fechaFormateada} · {hora}</p>
+        <div class="min-w-0 flex-1">
+          <p class="truncate text-sm font-medium text-gray-900">{medicoNombre}</p>
+          <p class="truncate text-xs capitalize text-gray-500">{fechaFormateada} · {hora}</p>
         </div>
         <button
           type="button"
           class="shrink-0 text-xs font-medium text-[#2D6A4F]"
-          onclick={() => { step = 'medico-fecha'; disponibilidadChecked = false; }}
+          onclick={() => {
+            step = 'medico-fecha';
+          }}
         >
           Cambiar
         </button>
@@ -336,12 +434,19 @@
         <!-- Paciente select -->
         <div class="flex flex-col gap-1">
           <label for="paciente" class={labelClass}>Paciente</label>
-          <select id="paciente" class={inputClass} bind:value={pacienteId}>
-            <option value="">Seleccionar paciente</option>
-            {#each PACIENTES as paciente (paciente.id)}
-              <option value={paciente.id}>{paciente.nombre} · {paciente.cedula}</option>
-            {/each}
-          </select>
+          {#if $patientsQuery.isPending}
+            <div class="flex items-center gap-2 text-xs text-gray-400">
+              <Loader2 class="h-4 w-4 animate-spin" />
+              Cargando pacientes...
+            </div>
+          {:else}
+            <select id="paciente" class={inputClass} bind:value={pacienteId}>
+              <option value="">Seleccionar paciente</option>
+              {#each ($patientsQuery.data ?? []) as p (p.id)}
+                <option value={p.id}>{p.nombre} · {p.cedula}</option>
+              {/each}
+            </select>
+          {/if}
           {#if errors.paciente}
             <p class={errorClass}>{errors.paciente}</p>
           {/if}
@@ -363,17 +468,36 @@
         </div>
       </div>
 
+      <!-- Conflict error -->
+      {#if conflictoError}
+        <div class="rounded-lg border border-red-200 bg-red-50 p-3">
+          <p class="text-xs font-semibold text-red-800">{conflictoError}</p>
+        </div>
+      {/if}
+
       <!-- Action row -->
       <div class="flex gap-2">
         <button
           type="button"
           class="btn-outline flex-1"
-          onclick={() => { step = 'medico-fecha'; }}
+          onclick={() => {
+            step = 'medico-fecha';
+          }}
         >
           ← Volver
         </button>
-        <button type="button" class="btn-primary flex-1" onclick={handleGuardar}>
-          Agendar cita
+        <button
+          type="button"
+          class="btn-primary flex-1"
+          onclick={handleGuardar}
+          disabled={$appointmentMutation.isPending}
+        >
+          {#if $appointmentMutation.isPending}
+            <Loader2 class="h-4 w-4 animate-spin" />
+            Agendando...
+          {:else}
+            Agendar cita
+          {/if}
         </button>
       </div>
     </div>

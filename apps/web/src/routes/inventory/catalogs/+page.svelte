@@ -10,40 +10,65 @@
     Trash2,
     CheckCircle2,
     X,
+    Info,
   } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
 
-  // ── Mock data ────────────────────────────────────────────────────────────────
-
-  const MEDICAMENTOS = [
-    { id: 'm1', nombre: 'Paracetamol 500mg', principioActivo: 'Paracetamol', formaFarmaceutica: 'Tableta', presentacion: 'Caja x 20 tab', categoria: 'Analgésico' },
-    { id: 'm2', nombre: 'Ibuprofeno 400mg', principioActivo: 'Ibuprofeno', formaFarmaceutica: 'Tableta', presentacion: 'Caja x 10 tab', categoria: 'Antiinflamatorio' },
-    { id: 'm3', nombre: 'Amoxicilina 500mg', principioActivo: 'Amoxicilina', formaFarmaceutica: 'Cápsula', presentacion: 'Caja x 12 cap', categoria: 'Antibiótico' },
-    { id: 'm4', nombre: 'Vitamina C 500mg', principioActivo: 'Ácido ascórbico', formaFarmaceutica: 'Comprimido', presentacion: 'Frasco x 30 comp', categoria: 'Vitaminas' },
-    { id: 'm5', nombre: 'Metformina 850mg', principioActivo: 'Metformina', formaFarmaceutica: 'Tableta', presentacion: 'Caja x 30 tab', categoria: 'Antidiabético' },
-  ];
-
-  const MATERIALES = [
-    { id: 'mat1', nombre: 'Guantes de látex', presentacion: 'Caja x 100 uds', categoria: 'Protección' },
-    { id: 'mat2', nombre: 'Gasas estériles', presentacion: 'Caja x 50 uds', categoria: 'Curaciones' },
-    { id: 'mat3', nombre: 'Jeringas 5ml', presentacion: 'Caja x 100 uds', categoria: 'Inyectables' },
-    { id: 'mat4', nombre: 'Vendas elásticas', presentacion: 'Paquete x 12 uds', categoria: 'Curaciones' },
-  ];
-
-  const CATEGORIAS = [
-    { id: 'c1', nombre: 'Analgésico', descripcion: 'Medicamentos para el dolor', tipo: 'medicamento' },
-    { id: 'c2', nombre: 'Antiinflamatorio', descripcion: 'Reducción de inflamación', tipo: 'medicamento' },
-    { id: 'c3', nombre: 'Antibiótico', descripcion: 'Tratamiento de infecciones bacterianas', tipo: 'medicamento' },
-    { id: 'c4', nombre: 'Vitaminas', descripcion: 'Suplementos vitamínicos', tipo: 'medicamento' },
-    { id: 'c5', nombre: 'Antidiabético', descripcion: 'Control de glucemia', tipo: 'medicamento' },
-    { id: 'c6', nombre: 'Protección', descripcion: 'Equipos de protección personal', tipo: 'material' },
-    { id: 'c7', nombre: 'Curaciones', descripcion: 'Materiales para curación de heridas', tipo: 'material' },
-    { id: 'c8', nombre: 'Inyectables', descripcion: 'Materiales para inyecciones', tipo: 'material' },
-  ];
-
-  // ── State ─────────────────────────────────────────────────────────────────────
+  // ── Types ─────────────────────────────────────────────────────────────────────
 
   type Tab = 'medicamentos' | 'materiales' | 'categorias';
+
+  // ── Query client ──────────────────────────────────────────────────────────────
+
+  const queryClient = useQueryClient();
+
+  // ── Queries ───────────────────────────────────────────────────────────────────
+
+  const medsQuery = createQuery({
+    queryKey: ['medications'],
+    queryFn: async () => {
+      const res = await api.api.inventory.medications.get();
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al cargar medicamentos');
+      return res.data ?? [];
+    },
+  });
+
+  const matsQuery = createQuery({
+    queryKey: ['surgical-materials'],
+    queryFn: async () => {
+      const res = await api.api.inventory['surgical-materials'].get();
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al cargar materiales');
+      return res.data ?? [];
+    },
+  });
+
+  const catsQuery = createQuery({
+    queryKey: ['medication-categories'],
+    queryFn: async () => {
+      const res = await api.api.inventory['medication-categories'].get();
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al cargar categorías');
+      return res.data ?? [];
+    },
+  });
+
+  // ── Mutation ──────────────────────────────────────────────────────────────────
+
+  const createCategoryMutation = createMutation({
+    mutationFn: async (nombre: string) => {
+      const res = await api.api.inventory['medication-categories'].post({ nombre });
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al guardar');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['medication-categories'] });
+      guardado = true;
+      guardadoNombre = formNombre;
+    },
+  });
+
+  // ── State ─────────────────────────────────────────────────────────────────────
 
   let tabActivo = $state<Tab>('medicamentos');
   let search = $state('');
@@ -51,34 +76,37 @@
 
   // Form state
   let formNombre = $state('');
-  let formDescripcion = $state('');
-  let formPresentacion = $state('');
-  let formCategoria = $state('');
-  let formPrincipioActivo = $state('');
-  let formFormaFarmaceutica = $state('');
   let guardado = $state(false);
   let guardadoNombre = $state('');
+  let mutationError = $state('');
 
-  // ── Derived ───────────────────────────────────────────────────────────────────
+  // ── Derived — filtered lists ──────────────────────────────────────────────────
 
-  const filteredMeds = $derived(
-    MEDICAMENTOS.filter(
-      (m) =>
-        m.nombre.toLowerCase().includes(search.toLowerCase()) ||
-        m.principioActivo.toLowerCase().includes(search.toLowerCase()),
-    ),
+  const filteredMeds = $derived.by(() => {
+    const data = $medsQuery.data ?? [];
+    const q = search.toLowerCase();
+    return data.filter((m: any) => m.nombre.toLowerCase().includes(q));
+  });
+
+  const filteredMats = $derived.by(() => {
+    const data = $matsQuery.data ?? [];
+    const q = search.toLowerCase();
+    return data.filter((m: any) => m.nombre.toLowerCase().includes(q));
+  });
+
+  const filteredCats = $derived.by(() => {
+    const data = $catsQuery.data ?? [];
+    const q = search.toLowerCase();
+    return data.filter((c: any) => c.nombre.toLowerCase().includes(q));
+  });
+
+  const activeCount = $derived(
+    tabActivo === 'medicamentos'
+      ? filteredMeds.length
+      : tabActivo === 'materiales'
+        ? filteredMats.length
+        : filteredCats.length,
   );
-
-  const filteredMats = $derived(
-    MATERIALES.filter((m) => m.nombre.toLowerCase().includes(search.toLowerCase())),
-  );
-
-  const filteredCats = $derived(
-    CATEGORIAS.filter((c) => c.nombre.toLowerCase().includes(search.toLowerCase())),
-  );
-
-  const categoriasMedicamento = $derived(CATEGORIAS.filter((c) => c.tipo === 'medicamento'));
-  const categoriasMaterial = $derived(CATEGORIAS.filter((c) => c.tipo === 'material'));
 
   // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -89,36 +117,26 @@
   }
 
   function searchPlaceholder(): string {
-    if (tabActivo === 'medicamentos') return 'Buscar por nombre o principio activo…';
+    if (tabActivo === 'medicamentos') return 'Buscar medicamento…';
     if (tabActivo === 'materiales') return 'Buscar material…';
     return 'Buscar categoría…';
   }
 
-  function countLabel(): string {
-    const count =
-      tabActivo === 'medicamentos'
-        ? filteredMeds.length
-        : tabActivo === 'materiales'
-          ? filteredMats.length
-          : filteredCats.length;
-    return `${count} elemento(s)`;
-  }
-
-  function handleGuardar() {
-    if (!formNombre) return;
-    guardadoNombre = formNombre;
-    guardado = true;
+  async function handleGuardar() {
+    if (!formNombre.trim()) return;
+    mutationError = '';
+    try {
+      await $createCategoryMutation.mutateAsync(formNombre.trim());
+    } catch (err) {
+      mutationError = err instanceof Error ? err.message : 'Error inesperado';
+    }
   }
 
   function resetForm() {
     formNombre = '';
-    formDescripcion = '';
-    formPresentacion = '';
-    formCategoria = '';
-    formPrincipioActivo = '';
-    formFormaFarmaceutica = '';
     guardado = false;
     guardadoNombre = '';
+    mutationError = '';
   }
 
   function handleCerrarDrawer() {
@@ -208,11 +226,30 @@
     </div>
 
     <!-- Count -->
-    <p class="text-xs text-gray-500 mb-3">{countLabel()}</p>
+    <p class="text-xs text-gray-500 mb-3">{activeCount} elemento(s)</p>
 
     <!-- ── Medicamentos ── -->
     {#if tabActivo === 'medicamentos'}
-      {#if filteredMeds.length === 0}
+      {#if $medsQuery.isPending}
+        <ul class="flex flex-col gap-3">
+          {#each { length: 4 } as _, i (i)}
+            <li class="rounded-xl border border-gray-200 bg-white p-4 animate-pulse">
+              <div class="flex items-center gap-3">
+                <div class="size-9 rounded-lg bg-gray-200 shrink-0"></div>
+                <div class="flex-1 space-y-2">
+                  <div class="h-4 bg-gray-200 rounded w-3/4"></div>
+                  <div class="h-3 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {:else if $medsQuery.isError}
+        <div class="flex flex-col items-center justify-center gap-3 py-20 text-red-400">
+          <Pill class="size-10 stroke-[1.5]" />
+          <p class="text-sm">{$medsQuery.error?.message ?? 'Error al cargar medicamentos'}</p>
+        </div>
+      {:else if filteredMeds.length === 0}
         <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
           <Pill class="size-10 stroke-[1.5]" />
           <p class="text-sm">Sin medicamentos registrados</p>
@@ -226,12 +263,16 @@
               </span>
               <div class="flex-1 min-w-0">
                 <p class="font-medium text-gray-900 truncate">{med.nombre}</p>
-                <p class="text-xs text-gray-500 mt-0.5 truncate">
-                  {med.principioActivo} · {med.formaFarmaceutica}
-                </p>
-                <span class="mt-1 inline-block bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-600">
-                  {med.categoria}
-                </span>
+                {#if med.categorias?.length}
+                  <p class="text-xs text-gray-500 mt-0.5 truncate">
+                    {med.categorias.map((c: any) => c.nombre).join(', ')}
+                  </p>
+                {/if}
+                {#if med.presentaciones?.length}
+                  <span class="mt-1 inline-block bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-600">
+                    {med.presentaciones.length} presentación(es)
+                  </span>
+                {/if}
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <button
@@ -256,7 +297,26 @@
 
     <!-- ── Materiales ── -->
     {:else if tabActivo === 'materiales'}
-      {#if filteredMats.length === 0}
+      {#if $matsQuery.isPending}
+        <ul class="flex flex-col gap-3">
+          {#each { length: 3 } as _, i (i)}
+            <li class="rounded-xl border border-gray-200 bg-white p-4 animate-pulse">
+              <div class="flex items-center gap-3">
+                <div class="size-9 rounded-lg bg-gray-200 shrink-0"></div>
+                <div class="flex-1 space-y-2">
+                  <div class="h-4 bg-gray-200 rounded w-2/3"></div>
+                  <div class="h-3 bg-gray-200 rounded w-1/3"></div>
+                </div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {:else if $matsQuery.isError}
+        <div class="flex flex-col items-center justify-center gap-3 py-20 text-red-400">
+          <Stethoscope class="size-10 stroke-[1.5]" />
+          <p class="text-sm">{$matsQuery.error?.message ?? 'Error al cargar materiales'}</p>
+        </div>
+      {:else if filteredMats.length === 0}
         <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
           <Stethoscope class="size-10 stroke-[1.5]" />
           <p class="text-sm">Sin materiales registrados</p>
@@ -270,10 +330,11 @@
               </span>
               <div class="flex-1 min-w-0">
                 <p class="font-medium text-gray-900 truncate">{mat.nombre}</p>
-                <p class="text-xs text-gray-500 mt-0.5 truncate">{mat.presentacion}</p>
-                <span class="mt-1 inline-block bg-gray-100 px-2 py-0.5 rounded text-xs text-gray-600">
-                  {mat.categoria}
-                </span>
+                {#if mat.insumo != null}
+                  <p class="text-xs text-gray-500 mt-0.5">
+                    Stock disponible: {mat.insumo.stockDisponible}
+                  </p>
+                {/if}
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <button
@@ -298,7 +359,25 @@
 
     <!-- ── Categorías ── -->
     {:else}
-      {#if filteredCats.length === 0}
+      {#if $catsQuery.isPending}
+        <ul class="flex flex-col gap-3">
+          {#each { length: 5 } as _, i (i)}
+            <li class="rounded-xl border border-gray-200 bg-white p-4 animate-pulse">
+              <div class="flex items-center gap-3">
+                <div class="size-9 rounded-lg bg-gray-200 shrink-0"></div>
+                <div class="flex-1 space-y-2">
+                  <div class="h-4 bg-gray-200 rounded w-1/2"></div>
+                </div>
+              </div>
+            </li>
+          {/each}
+        </ul>
+      {:else if $catsQuery.isError}
+        <div class="flex flex-col items-center justify-center gap-3 py-20 text-red-400">
+          <Tag class="size-10 stroke-[1.5]" />
+          <p class="text-sm">{$catsQuery.error?.message ?? 'Error al cargar categorías'}</p>
+        </div>
+      {:else if filteredCats.length === 0}
         <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
           <Tag class="size-10 stroke-[1.5]" />
           <p class="text-sm">Sin categorías registradas</p>
@@ -312,17 +391,6 @@
               </span>
               <div class="flex-1 min-w-0">
                 <p class="font-medium text-gray-900 truncate">{cat.nombre}</p>
-                <p class="text-xs text-gray-500 mt-0.5 truncate">{cat.descripcion}</p>
-                <span
-                  class={[
-                    'mt-1 inline-block px-2 py-0.5 rounded text-xs font-medium',
-                    cat.tipo === 'medicamento'
-                      ? 'bg-[#2D6A4F]/10 text-[#2D6A4F]'
-                      : 'bg-blue-100 text-blue-700',
-                  ].join(' ')}
-                >
-                  {cat.tipo === 'medicamento' ? 'Medicamento' : 'Material'}
-                </span>
               </div>
               <div class="flex items-center gap-1 shrink-0">
                 <button
@@ -371,159 +439,64 @@
             </button>
           </div>
 
-          <div class="space-y-4">
+          {#if tabActivo === 'categorias'}
+            <!-- Category form -->
+            <div class="space-y-4">
+              <div class="space-y-1">
+                <label for="form-nombre" class="text-xs font-medium text-gray-700">
+                  Nombre <span class="text-red-500">*</span>
+                </label>
+                <input
+                  id="form-nombre"
+                  type="text"
+                  bind:value={formNombre}
+                  placeholder="Ej. Analgésico"
+                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
+                />
+              </div>
 
-            <!-- Nombre (all tabs) -->
-            <div class="space-y-1">
-              <label for="form-nombre" class="text-xs font-medium text-gray-700">
-                Nombre <span class="text-red-500">*</span>
-              </label>
-              <input
-                id="form-nombre"
-                type="text"
-                bind:value={formNombre}
-                placeholder={tabActivo === 'medicamentos' ? 'Ej. Paracetamol 500mg' : tabActivo === 'materiales' ? 'Ej. Guantes de látex' : 'Ej. Analgésico'}
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-              />
+              {#if mutationError}
+                <p class="text-xs text-red-500">{mutationError}</p>
+              {/if}
             </div>
 
-            <!-- Medicamentos-only fields -->
-            {#if tabActivo === 'medicamentos'}
-              <div class="space-y-1">
-                <label for="form-principio" class="text-xs font-medium text-gray-700">
-                  Principio activo <span class="text-red-500">*</span>
-                </label>
-                <input
-                  id="form-principio"
-                  type="text"
-                  bind:value={formPrincipioActivo}
-                  placeholder="Ej. Paracetamol"
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                />
-              </div>
+            <!-- Actions -->
+            <div class="mt-6 flex gap-2">
+              <button
+                onclick={handleCerrarDrawer}
+                class="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onclick={handleGuardar}
+                disabled={!formNombre.trim() || $createCategoryMutation.isPending}
+                class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#2D6A4F]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {$createCategoryMutation.isPending ? 'Guardando…' : 'Guardar'}
+              </button>
+            </div>
 
+          {:else}
+            <!-- Info message for medications and materials -->
+            <div class="flex flex-col items-center gap-4 py-6 text-center">
+              <span class="rounded-full bg-amber-100 p-3 text-amber-600">
+                <Info class="size-6" />
+              </span>
               <div class="space-y-1">
-                <label for="form-forma" class="text-xs font-medium text-gray-700">
-                  Forma farmacéutica
-                </label>
-                <select
-                  id="form-forma"
-                  bind:value={formFormaFarmaceutica}
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                >
-                  <option value="">Seleccionar…</option>
-                  <option value="Tableta">Tableta</option>
-                  <option value="Cápsula">Cápsula</option>
-                  <option value="Comprimido">Comprimido</option>
-                  <option value="Jarabe">Jarabe</option>
-                  <option value="Suspensión">Suspensión</option>
-                  <option value="Crema">Crema</option>
-                  <option value="Ungüento">Ungüento</option>
-                  <option value="Inyectable">Inyectable</option>
-                </select>
+                <p class="text-sm font-medium text-gray-900">Registro no disponible aquí</p>
+                <p class="text-sm text-gray-500">
+                  Para registrar medicamentos o materiales, use el módulo de Donaciones.
+                </p>
               </div>
-            {/if}
-
-            <!-- Presentación (medicamentos + materiales) -->
-            {#if tabActivo === 'medicamentos' || tabActivo === 'materiales'}
-              <div class="space-y-1">
-                <label for="form-presentacion" class="text-xs font-medium text-gray-700">
-                  Presentación <span class="text-red-500">*</span>
-                </label>
-                <input
-                  id="form-presentacion"
-                  type="text"
-                  bind:value={formPresentacion}
-                  placeholder="Ej. Caja x 20 tab"
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                />
-              </div>
-            {/if}
-
-            <!-- Categoría (medicamentos + materiales) -->
-            {#if tabActivo === 'medicamentos'}
-              <div class="space-y-1">
-                <label for="form-categoria-med" class="text-xs font-medium text-gray-700">
-                  Categoría
-                </label>
-                <select
-                  id="form-categoria-med"
-                  bind:value={formCategoria}
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                >
-                  <option value="">Seleccionar…</option>
-                  {#each categoriasMedicamento as cat (cat.id)}
-                    <option value={cat.nombre}>{cat.nombre}</option>
-                  {/each}
-                </select>
-              </div>
-            {:else if tabActivo === 'materiales'}
-              <div class="space-y-1">
-                <label for="form-categoria-mat" class="text-xs font-medium text-gray-700">
-                  Categoría
-                </label>
-                <select
-                  id="form-categoria-mat"
-                  bind:value={formCategoria}
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                >
-                  <option value="">Seleccionar…</option>
-                  {#each categoriasMaterial as cat (cat.id)}
-                    <option value={cat.nombre}>{cat.nombre}</option>
-                  {/each}
-                </select>
-              </div>
-            {/if}
-
-            <!-- Categorías tab: Descripción + Tipo -->
-            {#if tabActivo === 'categorias'}
-              <div class="space-y-1">
-                <label for="form-descripcion" class="text-xs font-medium text-gray-700">
-                  Descripción
-                </label>
-                <input
-                  id="form-descripcion"
-                  type="text"
-                  bind:value={formDescripcion}
-                  placeholder="Descripción breve de la categoría"
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                />
-              </div>
-
-              <div class="space-y-1">
-                <label for="form-tipo" class="text-xs font-medium text-gray-700">
-                  Tipo
-                </label>
-                <select
-                  id="form-tipo"
-                  bind:value={formCategoria}
-                  class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-                >
-                  <option value="">Seleccionar…</option>
-                  <option value="medicamento">Medicamento</option>
-                  <option value="material">Material</option>
-                </select>
-              </div>
-            {/if}
-
-          </div>
-
-          <!-- Actions -->
-          <div class="mt-6 flex gap-2">
-            <button
-              onclick={handleCerrarDrawer}
-              class="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-            >
-              Cancelar
-            </button>
-            <button
-              onclick={handleGuardar}
-              disabled={!formNombre}
-              class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white shadow-sm hover:bg-[#2D6A4F]/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Guardar
-            </button>
-          </div>
+              <button
+                onclick={handleCerrarDrawer}
+                class="mt-2 rounded-lg border border-gray-300 px-6 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
+              >
+                Entendido
+              </button>
+            </div>
+          {/if}
 
         {:else}
           <!-- Success state -->

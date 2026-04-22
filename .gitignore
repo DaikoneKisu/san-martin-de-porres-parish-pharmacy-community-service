@@ -38,3 +38,4 @@ report.[0-9]_.[0-9]_.[0-9]_.[0-9]_.json
 
 # Generated declaration files (e.g. from @elysiajs/openapi fromTypes())
 src/**/*.d.ts
+web-nextjs

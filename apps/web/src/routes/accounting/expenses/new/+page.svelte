@@ -7,11 +7,11 @@
 		Info,
 		Loader2,
 	} from 'lucide-svelte';
+	import { createQuery, createMutation } from '@tanstack/svelte-query';
+	import { api } from '$lib/api';
 
 	type Moneda = 'VES' | 'USD';
 	type Paso = 'formulario' | 'confirmar' | 'guardado';
-
-	const TASA_BCV_SIMULADA = 36.48;
 
 	const CATEGORIAS = [
 		{ value: 'insumos', label: 'Compra de insumos' },
@@ -35,9 +35,34 @@
 	let monto = $state('');
 	let notas = $state('');
 	let paso = $state<Paso>('formulario');
-	let cargandoTasa = $state(false);
-	let tasa = $state<number | null>(null);
-	let tasaError = $state(false);
+
+	const rateQuery = createQuery({
+		queryKey: ['exchange-rate'],
+		queryFn: async () => {
+			const res = await api.api.accounting['exchange-rate'].get();
+			if (res.error) throw new Error((res.error as any).message ?? 'Error al obtener la tasa');
+			return res.data;
+		},
+		staleTime: 5 * 60 * 1000,
+	});
+
+	const tasa = $derived.by(() => {
+		const d = $rateQuery.data;
+		if (typeof d === 'number') return d;
+		if (d && typeof d === 'object' && 'rate' in d) return (d as any).rate as number;
+		return null;
+	});
+
+	const expenseMutation = createMutation({
+		mutationFn: async ({ concepto, monto, fecha }: { concepto: string; monto: number; fecha?: string }) => {
+			const res = await api.api.accounting.entries.expense.post({ concepto, monto, fecha });
+			if (res.error) throw new Error((res.error as any).message ?? 'Error al registrar');
+			return res.data;
+		},
+		onSuccess: () => {
+			paso = 'guardado';
+		},
+	});
 
 	const montoNum = $derived(parseFloat(monto) || 0);
 	const montoVES = $derived(
@@ -50,24 +75,24 @@
 	const categoriaLabel = $derived(
 		CATEGORIAS.find((c) => c.value === categoria)?.label ?? categoria,
 	);
+	const conceptoCompleto = $derived(
+		notas.trim()
+			? `${categoriaLabel}: ${concepto} — ${notas.trim()}`
+			: `${categoriaLabel}: ${concepto}`,
+	);
 
-	async function handleContinuar() {
+	function handleContinuar() {
 		if (!formValido) return;
-		if (moneda === 'USD') {
-			cargandoTasa = true;
-			tasaError = false;
-			await new Promise((r) => setTimeout(r, 1200));
-			tasa = TASA_BCV_SIMULADA;
-			cargandoTasa = false;
-			paso = 'confirmar';
-		} else {
-			paso = 'confirmar';
-		}
+		paso = 'confirmar';
 	}
 
-	async function handleGuardar() {
-		await new Promise((r) => setTimeout(r, 600));
-		paso = 'guardado';
+	function handleGuardar() {
+		const fechaHoy = new Date().toISOString().split('T')[0];
+		$expenseMutation.mutate({
+			concepto: conceptoCompleto,
+			monto: montoVES,
+			fecha: fechaHoy,
+		});
 	}
 
 	function resetForm() {
@@ -77,8 +102,6 @@
 		monto = '';
 		notas = '';
 		paso = 'formulario';
-		tasa = null;
-		tasaError = false;
 	}
 
 	const inputClass =
@@ -197,10 +220,29 @@
 					>
 						<Info class="mt-0.5 h-3.5 w-3.5 shrink-0" />
 						<span>
-							El monto se convertirá a VES usando la tasa oficial del BCV del día
-							al continuar.
+							El monto se convertirá a VES usando la tasa oficial del BCV del día.
 						</span>
 					</div>
+
+					<!-- Tasa BCV inline status -->
+					{#if $rateQuery.isPending}
+						<div class="mt-1 flex items-center gap-2 text-xs text-gray-400">
+							<Loader2 class="h-3.5 w-3.5 animate-spin" />
+							<span>Obteniendo tasa BCV…</span>
+						</div>
+					{:else if $rateQuery.isError}
+						<div
+							class="mt-1 flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
+						>
+							<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+							<span>No disponible — no se pudo obtener la tasa del BCV. Verifica tu conexión.</span>
+						</div>
+					{:else if tasa}
+						<div class="mt-1 flex items-center gap-1 text-xs text-emerald-600">
+							<CheckCircle2 class="h-3.5 w-3.5" />
+							<span>Tasa BCV: Bs. {tasa.toFixed(2)} / USD</span>
+						</div>
+					{/if}
 				{/if}
 			</div>
 
@@ -236,18 +278,6 @@
 					class={inputClass}
 				></textarea>
 			</div>
-
-			{#if tasaError}
-				<div
-					class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
-				>
-					<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
-					<span>
-						No se pudo obtener la tasa del BCV. Verifica tu conexión e intenta
-						de nuevo.
-					</span>
-				</div>
-			{/if}
 		</div>
 	{/if}
 
@@ -293,7 +323,11 @@
 						<div class="flex items-start justify-between gap-4">
 							<span class="text-sm text-gray-500">Tasa BCV del día</span>
 							<span class="text-right text-sm font-medium text-gray-900">
-								Bs. {tasa!.toFixed(2)} / USD
+								{#if tasa}
+									Bs. {tasa.toFixed(2)} / USD
+								{:else}
+									No disponible
+								{/if}
 							</span>
 						</div>
 
@@ -328,6 +362,17 @@
 				<div class="rounded-xl border border-gray-200 bg-gray-50 p-4">
 					<p class="mb-1 text-xs font-medium text-gray-500">Notas</p>
 					<p class="text-sm text-gray-700">{notas}</p>
+				</div>
+			{/if}
+
+			{#if $expenseMutation.isError}
+				<div
+					class="flex items-start gap-2 rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-xs text-red-600"
+				>
+					<AlertTriangle class="mt-0.5 h-3.5 w-3.5 shrink-0" />
+					<span>
+						{($expenseMutation.error as Error)?.message ?? 'Error al registrar el egreso. Intenta de nuevo.'}
+					</span>
 				</div>
 			{/if}
 		</div>
@@ -391,14 +436,19 @@
 
 			<button
 				onclick={paso === 'formulario' ? handleContinuar : handleGuardar}
-				disabled={!formValido || cargandoTasa}
+				disabled={paso === 'formulario'
+					? !formValido || (moneda === 'USD' && ($rateQuery.isPending || $rateQuery.isError))
+					: $expenseMutation.isPending}
 				class="flex flex-1 items-center justify-center gap-2 rounded-xl bg-[#2D6A4F] px-4 py-3 text-sm font-semibold text-white transition-colors hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
 			>
-				{#if cargandoTasa}
+				{#if paso === 'confirmar' && $expenseMutation.isPending}
+					<Loader2 class="h-4 w-4 animate-spin" />
+					<span>Guardando…</span>
+				{:else if paso === 'formulario' && moneda === 'USD' && $rateQuery.isPending}
 					<Loader2 class="h-4 w-4 animate-spin" />
 					<span>Obteniendo tasa BCV…</span>
 				{:else if paso === 'formulario'}
-					{moneda === 'USD' ? 'Obtener tasa y continuar' : 'Continuar'}
+					{moneda === 'USD' ? 'Continuar con tasa BCV' : 'Continuar'}
 				{:else}
 					Confirmar y guardar
 				{/if}

@@ -1,18 +1,25 @@
 <script lang="ts">
+  import { createQuery } from '@tanstack/svelte-query';
   import { DateTime } from 'luxon';
-  import { Search, Heart, User, Building2, Package, ChevronRight, Plus, Users } from 'lucide-svelte';
+  import { Search, Heart, User, Package, ChevronRight, Plus, Users } from 'lucide-svelte';
+  import { api } from '$lib/api';
 
-  const DONACIONES = [
-    { id: 'd1', fecha: '2025-03-15', donante: { tipo: 'persona', nombre: 'María González' }, items: 5, observaciones: 'Medicamentos en buen estado', contabilizada: true },
-    { id: 'd2', fecha: '2025-03-10', donante: { tipo: 'institucion', nombre: 'Fundación Salud Bolívar' }, items: 12, observaciones: '', contabilizada: true },
-    { id: 'd3', fecha: '2025-02-28', donante: { tipo: 'persona', nombre: 'Carlos Martínez' }, items: 3, observaciones: '', contabilizada: false },
-    { id: 'd4', fecha: '2025-02-14', donante: { tipo: 'institucion', nombre: 'Iglesia San José' }, items: 8, observaciones: 'Incluye materiales quirúrgicos', contabilizada: true },
-  ];
+  const donationsQuery = createQuery({
+    queryKey: ['donations'],
+    queryFn: async () => {
+      const res = await api.api.donations.get();
+      if (res.error) throw res.error;
+      return res.data;
+    },
+  });
 
   let search = $state('');
-  const filtered = $derived(DONACIONES.filter(d =>
-    d.donante.nombre.toLowerCase().includes(search.toLowerCase())
-  ));
+
+  const filtered = $derived(
+    ($donationsQuery.data ?? []).filter((d: any) =>
+      d.donante.nombre.toLowerCase().includes(search.toLowerCase())
+    )
+  );
 
   function formatFecha(iso: string) {
     return DateTime.fromISO(iso).setLocale('es').toFormat("d 'de' LLLL yyyy");
@@ -53,58 +60,73 @@
       />
     </div>
 
-    <!-- Count -->
-    <p class="text-xs text-gray-500 mb-3">{filtered.length} donación(es)</p>
-
-    <!-- List -->
-    {#if filtered.length === 0}
-      <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
-        <Heart class="size-10 stroke-[1.5]" />
-        <p class="text-sm">Sin donaciones registradas</p>
-      </div>
-    {:else}
+    {#if $donationsQuery.isPending}
+      <!-- Skeleton cards -->
+      <p class="text-xs text-gray-500 mb-3">Cargando…</p>
       <ul class="flex flex-col gap-3">
-        {#each filtered as donacion (donacion.id)}
-          <li>
-            <a
-              href="/donations/{donacion.id}"
-              class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 hover:shadow-sm transition-shadow"
-            >
-              <!-- Donor type icon -->
-              <span class={[
-                'shrink-0 rounded-lg p-2',
-                donacion.donante.tipo === 'persona'
-                  ? 'bg-primary/10 text-primary'
-                  : 'bg-blue-100 text-blue-600'
-              ].join(' ')}>
-                {#if donacion.donante.tipo === 'persona'}
-                  <User class="size-5" />
-                {:else}
-                  <Building2 class="size-5" />
-                {/if}
-              </span>
-
-              <!-- Info -->
-              <div class="flex-1 min-w-0">
-                <p class="font-medium text-gray-900 truncate">{donacion.donante.nombre}</p>
-                <p class="text-xs text-gray-500 mt-0.5">{formatFecha(donacion.fecha)}</p>
-                <div class="flex items-center gap-1 mt-1">
-                  <Package class="size-3 text-gray-400" />
-                  <span class="text-xs text-gray-500">{donacion.items} insumos</span>
-                  {#if donacion.contabilizada}
-                    <span class="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
-                      Contabilizada
-                    </span>
-                  {/if}
-                </div>
-              </div>
-
-              <!-- Arrow -->
-              <ChevronRight class="size-4 text-gray-400 shrink-0" />
-            </a>
+        {#each [1, 2, 3] as i (i)}
+          <li class="rounded-xl border border-gray-200 bg-white p-4 flex items-center gap-3 animate-pulse">
+            <span class="shrink-0 rounded-lg p-2 bg-gray-100 size-9"></span>
+            <div class="flex-1 min-w-0 space-y-2">
+              <div class="h-4 bg-gray-200 rounded w-2/5"></div>
+              <div class="h-3 bg-gray-100 rounded w-1/4"></div>
+              <div class="h-3 bg-gray-100 rounded w-1/3"></div>
+            </div>
           </li>
         {/each}
       </ul>
+    {:else if $donationsQuery.isError}
+      <!-- Error panel -->
+      <div class="flex flex-col items-center justify-center gap-3 py-20 text-red-500">
+        <Heart class="size-10 stroke-[1.5]" />
+        <p class="text-sm font-medium">Error al cargar las donaciones</p>
+        <p class="text-xs text-gray-400">Intenta recargar la página</p>
+      </div>
+    {:else}
+      <!-- Count -->
+      <p class="text-xs text-gray-500 mb-3">{filtered.length} donación(es)</p>
+
+      <!-- List -->
+      {#if filtered.length === 0}
+        <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
+          <Heart class="size-10 stroke-[1.5]" />
+          <p class="text-sm">Sin donaciones registradas</p>
+        </div>
+      {:else}
+        <ul class="flex flex-col gap-3">
+          {#each filtered as donacion (donacion.id)}
+            <li>
+              <a
+                href="/donations/{donacion.id}"
+                class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4 hover:shadow-sm transition-shadow"
+              >
+                <!-- Donor icon -->
+                <span class="shrink-0 rounded-lg p-2 bg-primary/10 text-primary">
+                  <User class="size-5" />
+                </span>
+
+                <!-- Info -->
+                <div class="flex-1 min-w-0">
+                  <p class="font-medium text-gray-900 truncate">{donacion.donante.nombre}</p>
+                  <p class="text-xs text-gray-500 mt-0.5">{formatFecha(donacion.fechaRecepcion)}</p>
+                  <div class="flex items-center gap-1 mt-1">
+                    <Package class="size-3 text-gray-400" />
+                    <span class="text-xs text-gray-500">{donacion.items.length} insumos</span>
+                    {#if donacion.contabilizable.asientosContables.length > 0}
+                      <span class="ml-2 text-xs font-medium px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 border border-emerald-200">
+                        Contabilizada
+                      </span>
+                    {/if}
+                  </div>
+                </div>
+
+                <!-- Arrow -->
+                <ChevronRight class="size-4 text-gray-400 shrink-0" />
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     {/if}
   </main>
 </div>

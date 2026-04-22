@@ -1,5 +1,6 @@
 <script lang="ts">
   import { DateTime } from 'luxon';
+  import { createQuery } from '@tanstack/svelte-query';
   import {
     Plus,
     Search,
@@ -7,64 +8,99 @@
     Stethoscope,
     SlidersHorizontal,
     CalendarDays,
-    X
+    X,
+    AlertCircle
   } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { api } from '$lib/api';
 
-  const CITAS = [
-    { id: 'c1', paciente: 'Ana Sofía Ramírez', cedula: 'V-12.345.678', medico: 'Dra. García', fecha: '2025-06-01', hora: '09:00', estado: 'pendiente', motivo: 'Control de presión arterial' },
-    { id: 'c2', paciente: 'Carlos Medina', cedula: 'V-9.876.543', medico: 'Dr. Rodríguez', fecha: '2025-05-28', hora: '10:30', estado: 'completada', motivo: 'Revisión general' },
-    { id: 'c3', paciente: 'María González', cedula: 'V-15.432.100', medico: 'Dra. García', fecha: '2025-05-25', hora: '08:00', estado: 'completada', motivo: 'Dolor de cabeza persistente' },
-    { id: 'c4', paciente: 'José Luis Hernández', cedula: 'V-8.001.234', medico: 'Dr. Pérez', fecha: '2025-06-05', hora: '11:00', estado: 'pendiente', motivo: 'Seguimiento tratamiento diabetes' },
-    { id: 'c5', paciente: 'Luisa Martínez', cedula: 'V-22.678.901', medico: 'Dra. García', fecha: '2025-05-20', hora: '14:00', estado: 'cancelada', motivo: 'Control rutinario' },
-    { id: 'c6', paciente: 'Pedro Castillo', cedula: 'V-11.223.344', medico: 'Dr. Rodríguez', fecha: '2025-06-10', hora: '09:30', estado: 'pendiente', motivo: 'Dolor articular' }
-  ];
+  type Appointment = {
+    id: string;
+    fechaHora: string;
+    motivo: string;
+    estado: 'PENDIENTE' | 'COMPLETADA' | 'CANCELADA';
+    precioConsulta: number;
+    adjuntos: string[];
+    paciente: {
+      id: string;
+      nombre: string;
+      cedula: string;
+    };
+    personal: {
+      id: string;
+      nombre: string;
+      cedula: string;
+    };
+    recipe: null | { id: string; indicaciones: string };
+  };
 
-  const MEDICOS = ['Dra. García', 'Dr. Rodríguez', 'Dr. Pérez'];
+  const appointmentsQuery = createQuery({
+    queryKey: ['appointments'],
+    queryFn: async () => {
+      const res = await api.api.medical.appointments.get();
+      if (res.error) throw new Error('Error al cargar las citas');
+      return (res.data ?? []) as Appointment[];
+    }
+  });
 
   let search = $state('');
-  let estadoFiltro = $state<'all' | 'pendiente' | 'completada' | 'cancelada'>('all');
+  let estadoFiltro = $state<'all' | 'PENDIENTE' | 'COMPLETADA' | 'CANCELADA'>('all');
   let medicoFiltro = $state('all');
   let filtrosDrawerOpen = $state(false);
 
-  // Temporary drawer state to allow applying/canceling
   let medicoFiltroTemp = $state('all');
-  let estadoFiltroTemp = $state<'all' | 'pendiente' | 'completada' | 'cancelada'>('all');
+  let estadoFiltroTemp = $state<'all' | 'PENDIENTE' | 'COMPLETADA' | 'CANCELADA'>('all');
+
+  const medicoOptions = $derived.by(() => {
+    const data = $appointmentsQuery.data ?? [];
+    const names = data.map((c) => c.personal.nombre);
+    return [...new Set(names)];
+  });
 
   const filtered = $derived.by(() => {
+    const data = $appointmentsQuery.data ?? [];
     const q = search.trim().toLowerCase();
-    return CITAS
+    return data
       .filter((c) => {
         if (estadoFiltro !== 'all' && c.estado !== estadoFiltro) return false;
-        if (medicoFiltro !== 'all' && c.medico !== medicoFiltro) return false;
+        if (medicoFiltro !== 'all' && c.personal.nombre !== medicoFiltro) return false;
         if (q) {
-          const hay = `${c.paciente} ${c.cedula} ${c.motivo}`.toLowerCase();
+          const hay = `${c.paciente.nombre} ${c.paciente.cedula} ${c.motivo}`.toLowerCase();
           if (!hay.includes(q)) return false;
         }
         return true;
       })
-      .sort((a, b) => {
-        const dtA = `${a.fecha}T${a.hora}`;
-        const dtB = `${b.fecha}T${b.hora}`;
-        return dtB.localeCompare(dtA);
-      });
+      .sort((a, b) => b.fechaHora.localeCompare(a.fechaHora));
   });
 
-  function formatFecha(iso: string): string {
-    return DateTime.fromISO(iso).setLocale('es').toFormat('EEE dd MMM');
+  function formatFecha(fechaHora: string): string {
+    return DateTime.fromISO(fechaHora).setLocale('es').toFormat("d 'de' LLLL");
+  }
+
+  function formatHora(fechaHora: string): string {
+    return DateTime.fromISO(fechaHora).toFormat('HH:mm');
+  }
+
+  function estadoLabel(estado: string): string {
+    const labels: Record<string, string> = {
+      PENDIENTE: 'Pendiente',
+      COMPLETADA: 'Completada',
+      CANCELADA: 'Cancelada'
+    };
+    return labels[estado] ?? estado.toLowerCase();
   }
 
   type EstadoBadgeClasses = {
-    completada: string;
-    pendiente: string;
-    cancelada: string;
+    COMPLETADA: string;
+    PENDIENTE: string;
+    CANCELADA: string;
     [key: string]: string;
   };
 
   const estadoBadgeClasses: EstadoBadgeClasses = {
-    completada: 'bg-emerald-50 text-emerald-700 border border-emerald-300',
-    pendiente: 'bg-blue-50 text-blue-700 border border-blue-200',
-    cancelada: 'bg-gray-100 text-gray-500 border border-gray-300'
+    COMPLETADA: 'bg-emerald-50 text-emerald-700 border border-emerald-300',
+    PENDIENTE: 'bg-blue-50 text-blue-700 border border-blue-200',
+    CANCELADA: 'bg-gray-100 text-gray-500 border border-gray-300'
   };
 
   function openFiltrosDrawer() {
@@ -138,7 +174,7 @@
       </button>
 
       <!-- Estado chips -->
-      {#each ([['all', 'Todas'], ['pendiente', 'Pendiente'], ['completada', 'Completada'], ['cancelada', 'Cancelada']] as const) as [val, label] (val)}
+      {#each ([['all', 'Todas'], ['PENDIENTE', 'Pendiente'], ['COMPLETADA', 'Completada'], ['CANCELADA', 'Cancelada']] as const) as [val, label] (val)}
         <button
           onclick={() => (estadoFiltro = val)}
           class={[
@@ -153,45 +189,70 @@
       {/each}
     </div>
 
-    <!-- Count -->
-    <p class="mb-3 text-xs text-gray-500">{filtered.length} cita(s)</p>
-
-    <!-- Card list -->
-    <div class="flex flex-col gap-3">
-      {#each filtered as c (c.id)}
-        <a
-          href="/medical/appointments/{c.id}"
-          class="flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
-        >
-          <!-- Left icon -->
-          <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2D6A4F]/10">
-            <Stethoscope class="h-5 w-5 text-[#2D6A4F]" />
-          </span>
-
-          <!-- Content -->
-          <div class="min-w-0 flex-1">
-            <p class="truncate font-medium text-gray-900">{c.paciente}</p>
-            <p class="truncate text-xs text-gray-500">{c.motivo}</p>
-            <div class="mt-1.5 flex flex-wrap items-center gap-2">
-              <span class={['rounded-full px-2 py-0.5 text-xs font-medium', estadoBadgeClasses[c.estado]]}>
-                {c.estado.charAt(0).toUpperCase() + c.estado.slice(1)}
-              </span>
-              <span class="text-xs text-gray-400">{formatFecha(c.fecha)} · {c.hora}</span>
-              <span class="text-xs text-gray-400">{c.medico}</span>
+    <!-- Loading skeletons -->
+    {#if $appointmentsQuery.isPending}
+      <div class="flex flex-col gap-3">
+        {#each [1, 2, 3] as i (i)}
+          <div class="flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm">
+            <div class="h-10 w-10 shrink-0 animate-pulse rounded-lg bg-gray-200"></div>
+            <div class="flex-1 space-y-2">
+              <div class="h-4 w-2/3 animate-pulse rounded bg-gray-200"></div>
+              <div class="h-3 w-1/2 animate-pulse rounded bg-gray-100"></div>
+              <div class="h-3 w-1/3 animate-pulse rounded bg-gray-100"></div>
             </div>
           </div>
+        {/each}
+      </div>
 
-          <ChevronRight class="h-5 w-5 shrink-0 text-gray-400" />
-        </a>
-      {:else}
-        <!-- Empty state -->
-        <div class="flex flex-col items-center gap-3 py-16 text-center">
-          <CalendarDays class="h-12 w-12 text-gray-300" />
-          <p class="font-medium text-gray-600">Sin resultados</p>
-          <p class="text-sm text-gray-400">Ajusta los filtros o la búsqueda.</p>
-        </div>
-      {/each}
-    </div>
+    <!-- Error state -->
+    {:else if $appointmentsQuery.isError}
+      <div class="flex flex-col items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-8 text-center">
+        <AlertCircle class="h-10 w-10 text-red-400" />
+        <p class="font-medium text-red-700">Error al cargar las citas</p>
+        <p class="text-sm text-red-500">Intenta recargar la página.</p>
+      </div>
+
+    {:else}
+      <!-- Count -->
+      <p class="mb-3 text-xs text-gray-500">{filtered.length} cita(s)</p>
+
+      <!-- Card list -->
+      <div class="flex flex-col gap-3">
+        {#each filtered as c (c.id)}
+          <a
+            href="/medical/appointments/{c.id}"
+            class="flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm transition-shadow hover:shadow-md"
+          >
+            <!-- Left icon -->
+            <span class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#2D6A4F]/10">
+              <Stethoscope class="h-5 w-5 text-[#2D6A4F]" />
+            </span>
+
+            <!-- Content -->
+            <div class="min-w-0 flex-1">
+              <p class="truncate font-medium text-gray-900">{c.paciente.nombre}</p>
+              <p class="truncate text-xs text-gray-500">{c.motivo}</p>
+              <div class="mt-1.5 flex flex-wrap items-center gap-2">
+                <span class={['rounded-full px-2 py-0.5 text-xs font-medium', estadoBadgeClasses[c.estado] ?? '']}>
+                  {estadoLabel(c.estado)}
+                </span>
+                <span class="text-xs text-gray-400">{formatFecha(c.fechaHora)} · {formatHora(c.fechaHora)}</span>
+                <span class="text-xs text-gray-400">{c.personal.nombre}</span>
+              </div>
+            </div>
+
+            <ChevronRight class="h-5 w-5 shrink-0 text-gray-400" />
+          </a>
+        {:else}
+          <!-- Empty state -->
+          <div class="flex flex-col items-center gap-3 py-16 text-center">
+            <CalendarDays class="h-12 w-12 text-gray-300" />
+            <p class="font-medium text-gray-600">Sin resultados</p>
+            <p class="text-sm text-gray-400">Ajusta los filtros o la búsqueda.</p>
+          </div>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -228,7 +289,7 @@
           class="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 outline-none focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F]"
         >
           <option value="all">Todos</option>
-          {#each MEDICOS as m (m)}
+          {#each medicoOptions as m (m)}
             <option value={m}>{m}</option>
           {/each}
         </select>

@@ -12,6 +12,7 @@ import { auditModule } from "./modules/audit";
 import { adminModule } from "./modules/admin";
 import { updateTrust } from "@sanmart/bcv-api";
 import { appConfig } from "./config";
+import { authMacro } from "./plugins/auth-macro";
 
 updateTrust().then(({ success, error }) => {
   if (!success) console.error("[BCV] Trust update failed on startup:", error?.message);
@@ -65,6 +66,18 @@ const app = new Elysia()
     );
   })
   .mount(auth.handler)
+  .use(authMacro)
+  .guard({ requireAuth: true }, (app) =>
+    app.get("/api/me", ({ user }) => ({
+      id: user.id,
+      email: user.email,
+      nombre: user.nombre,
+      cedula: user.cedula,
+      telefono: user.telefono,
+      activo: user.activo,
+      roles: user.roles.map((r: { nombre: string }) => r.nombre),
+    })),
+  )
   .use(medicalModule)
   .use(inventoryModule)
   .use(donationsModule)

@@ -7,6 +7,9 @@ export const medicalModule = new Elysia({ prefix: "/api/medical" })
   .use(authMacro)
   .guard({ requireAuth: true }, (app) =>
     app
+      // ── Staff (public for scheduling) ─────────────────────────────────────
+      .get("/staff", () => medicalService.listStaff())
+
       // ── Patients ──────────────────────────────────────────────────────────
       .get("/patients", () => medicalService.listPatients())
 

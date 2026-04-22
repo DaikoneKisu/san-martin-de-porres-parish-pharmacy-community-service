@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { goto } from '$app/navigation';
+  import { goto, invalidateAll } from '$app/navigation';
+  import { PUBLIC_API_URL } from '$env/static/public';
   import { Eye, EyeOff, AlertCircle, Loader2 } from 'lucide-svelte';
   import SanmartLogo from '$lib/components/sanmart-logo.svelte';
 
@@ -19,13 +20,26 @@
       return;
     }
     formState = 'loading';
-    await new Promise((resolve) => setTimeout(resolve, 900));
-    if (password === 'error') {
-      errorMsg = 'Correo o contraseña incorrectos. Intenta de nuevo.';
+    try {
+      const res = await fetch(`${PUBLIC_API_URL}/api/auth/sign-in/email`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+        body: JSON.stringify({ email, password }),
+      });
+
+      if (res.ok) {
+        await invalidateAll();
+        goto('/');
+      } else {
+        const data = await res.json().catch(() => ({})) as { message?: string };
+        errorMsg = data.message ?? 'Correo o contraseña incorrectos. Intenta de nuevo.';
+        formState = 'error';
+      }
+    } catch {
+      errorMsg = 'No se pudo conectar con el servidor. Intenta de nuevo.';
       formState = 'error';
-      return;
     }
-    goto('/');
   }
 </script>
 

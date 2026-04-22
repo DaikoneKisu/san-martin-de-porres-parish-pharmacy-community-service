@@ -1,92 +1,110 @@
 <script lang="ts">
-  import { DateTime } from 'luxon';
+  import { createQuery, createMutation } from '@tanstack/svelte-query';
   import {
     AlertTriangle,
-    Camera,
     CheckCircle2,
     Plus,
     Trash2,
-    ImageIcon,
     Search,
     X,
     Package,
+    Link,
   } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { api } from '$lib/api';
 
-  const PACIENTES = [
-    { id: '1', nombre: 'Ana Sofía Ramírez Torres', cedula: 'V-12.345.678' },
-    { id: '2', nombre: 'Carlos Medina López', cedula: 'V-9.876.543' },
-    { id: '3', nombre: 'María González Pérez', cedula: 'V-15.432.100' },
-    { id: '4', nombre: 'José Luis Hernández', cedula: 'V-8.001.234' },
-  ];
-
-  const INSUMOS_DISPONIBLES = [
-    { id: '1', nombre: 'Amoxicilina 500mg', stock: 120, precioRef: 2.5 },
-    { id: '5', nombre: 'Enalapril 10mg', stock: 60, precioRef: 2.0 },
-    { id: '7', nombre: 'Loratadina 10mg', stock: 30, precioRef: 1.2 },
-    { id: '3', nombre: 'Metformina 850mg', stock: 0, precioRef: 3.2 },
-  ];
-
-  type Linea = { insumoId: string; nombre: string; cantidad: number; precioUnit: number };
+  type Linea = {
+    insumoId: string;
+    nombre: string;
+    cantidadDespachada: number;
+    precioUnitario: number;
+  };
 
   // Form state
-  let pacienteId = $state('');
-  let medicoExt = $state('');
-  let fecha = $state(DateTime.now().toISODate() ?? '');
-  let fotoCapturada = $state(false);
+  let adjuntoUrl = $state('');
+  let indicaciones = $state('');
   let lineas = $state<Linea[]>([]);
   let errors = $state<Record<string, string>>({});
   let insumoDrawerOpen = $state(false);
   let saved = $state(false);
-
-  // Insumo drawer state
   let insumoSearch = $state('');
   let insumoQtys = $state<Record<string, string>>({});
 
-  const filteredInsumos = $derived(
-    INSUMOS_DISPONIBLES.filter((i) =>
-      i.nombre.toLowerCase().includes(insumoSearch.toLowerCase())
+  // Supplies query
+  const suppliesQuery = createQuery({
+    queryKey: ['supplies'],
+    queryFn: async () => {
+      const res = await api.api.inventory.supplies.get();
+      if (res.error) throw new Error('Error al cargar insumos');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 5,
+  });
+
+  function getSupplyName(s: NonNullable<typeof $suppliesQuery.data>[0]): string {
+    if (s.materialQuirurgico) return s.materialQuirurgico.nombre;
+    return `Insumo #${s.id.substring(0, 8)}`;
+  }
+
+  const filteredSupplies = $derived(
+    ($suppliesQuery.data ?? []).filter(
+      (s: any) =>
+        s.stockDisponible > 0 &&
+        getSupplyName(s).toLowerCase().includes(insumoSearch.toLowerCase())
     )
   );
 
-  const total = $derived(lineas.reduce((sum, l) => sum + l.cantidad * l.precioUnit, 0));
+  const total = $derived(
+    lineas.reduce((sum, l) => sum + l.cantidadDespachada * l.precioUnitario, 0)
+  );
+
+  // Mutation
+  const recipeMutation = createMutation({
+    mutationFn: async () => {
+      const res = await api.api.medical['external-recipes'].post({
+        adjuntoExterno: adjuntoUrl,
+        indicaciones: indicaciones.trim() || undefined,
+        insumosConsumidos: lineas.map((l) => ({
+          insumoId: l.insumoId,
+          cantidadDespachada: l.cantidadDespachada,
+          precioUnitario: l.precioUnitario,
+        })),
+      });
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al guardar');
+      return res.data!;
+    },
+    onSuccess: () => {
+      saved = true;
+    },
+  });
 
   function handleGuardar() {
     const newErrors: Record<string, string> = {};
-
-    if (!pacienteId) newErrors.paciente = 'Selecciona un paciente.';
-    if (!medicoExt.trim()) newErrors.medico = 'Ingresa el nombre del médico emisor.';
-    if (!fecha) newErrors.fecha = 'Selecciona la fecha del récipe.';
-    if (!fotoCapturada) newErrors.foto = 'Se requiere fotografía del récipe físico.';
+    if (!adjuntoUrl.trim()) newErrors.foto = 'La URL del récipe físico es requerida.';
     if (lineas.length === 0) newErrors.lineas = 'Agrega al menos un medicamento a dispensar.';
-
     errors = newErrors;
-
-    if (Object.keys(newErrors).length === 0) {
-      saved = true;
-    }
+    if (Object.keys(newErrors).length === 0) $recipeMutation.mutate();
   }
 
   function handleAgregarInsumos() {
-    for (const insumo of filteredInsumos) {
-      const raw = insumoQtys[insumo.id];
+    const supplies = $suppliesQuery.data ?? [];
+    for (const s of supplies) {
+      const raw = insumoQtys[s.id];
       if (!raw) continue;
-      const qty = parseInt(raw, 10);
-      if (!Number.isFinite(qty) || qty <= 0 || qty > insumo.stock) continue;
-
-      const existing = lineas.findIndex((l) => l.insumoId === insumo.id);
+      const qty = parseFloat(raw);
+      if (!Number.isFinite(qty) || qty <= 0 || qty > s.stockDisponible) continue;
+      const existing = lineas.findIndex((l) => l.insumoId === s.id);
       if (existing >= 0) {
-        lineas[existing].cantidad = qty;
+        lineas[existing].cantidadDespachada = qty;
       } else {
         lineas.push({
-          insumoId: insumo.id,
-          nombre: insumo.nombre,
-          cantidad: qty,
-          precioUnit: insumo.precioRef,
+          insumoId: s.id,
+          nombre: getSupplyName(s),
+          cantidadDespachada: qty,
+          precioUnitario: Number(s.precioUnitarioReferencial ?? 0),
         });
       }
     }
-
     insumoDrawerOpen = false;
     insumoSearch = '';
     insumoQtys = {};
@@ -97,10 +115,8 @@
   }
 
   function resetAll() {
-    pacienteId = '';
-    medicoExt = '';
-    fecha = DateTime.now().toISODate() ?? '';
-    fotoCapturada = false;
+    adjuntoUrl = '';
+    indicaciones = '';
     lineas = [];
     errors = {};
     insumoSearch = '';
@@ -153,124 +169,50 @@
     <!-- Form content -->
     <div class="flex flex-col gap-4 px-4 pt-4 pb-28 max-w-2xl w-full mx-auto">
 
-      <!-- Section 1: Datos del récipe -->
+      <!-- Section 1: Récipe físico -->
       <div class="rounded-xl border bg-white p-4 flex flex-col gap-4">
-        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">Datos del récipe</p>
+        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">Récipe físico</p>
 
-        <!-- Paciente -->
+        <!-- URL del adjunto -->
         <div class="flex flex-col gap-1.5">
-          <label for="paciente" class="text-sm font-medium text-gray-700">Paciente</label>
-          <select
-            id="paciente"
-            bind:value={pacienteId}
-            class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0"
-            style={errors.paciente ? 'border-color: #ef4444;' : ''}
-          >
-            <option value="">Seleccionar paciente</option>
-            {#each PACIENTES as p (p.id)}
-              <option value={p.id}>{p.nombre} · {p.cedula}</option>
-            {/each}
-          </select>
-          {#if errors.paciente}
-            <p class="flex items-center gap-1 text-xs text-red-600">
-              <AlertTriangle size={12} />
-              {errors.paciente}
-            </p>
-          {/if}
-        </div>
-
-        <!-- Médico -->
-        <div class="flex flex-col gap-1.5">
-          <label for="medico" class="text-sm font-medium text-gray-700">
-            Médico que emitió el récipe
+          <label for="adjunto-url" class="text-sm font-medium text-gray-700">
+            URL de la fotografía / archivo del récipe
           </label>
-          <input
-            id="medico"
-            type="text"
-            bind:value={medicoExt}
-            placeholder="Nombre del médico externo"
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-0"
-            style={errors.medico ? 'border-color: #ef4444;' : ''}
-          />
-          {#if errors.medico}
-            <p class="flex items-center gap-1 text-xs text-red-600">
-              <AlertTriangle size={12} />
-              {errors.medico}
-            </p>
-          {/if}
-        </div>
-
-        <!-- Fecha -->
-        <div class="flex flex-col gap-1.5">
-          <label for="fecha" class="text-sm font-medium text-gray-700">Fecha del récipe</label>
-          <input
-            id="fecha"
-            type="date"
-            bind:value={fecha}
-            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-900 focus:outline-none focus:ring-2 focus:ring-offset-0"
-            style={errors.fecha ? 'border-color: #ef4444;' : ''}
-          />
-          {#if errors.fecha}
-            <p class="flex items-center gap-1 text-xs text-red-600">
-              <AlertTriangle size={12} />
-              {errors.fecha}
-            </p>
-          {/if}
-        </div>
-      </div>
-
-      <!-- Section 2: Fotografía -->
-      <div class="rounded-xl border bg-white p-4 flex flex-col gap-3">
-        <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">
-          Fotografía del récipe físico
-        </p>
-        <p class="text-sm text-gray-500">
-          Captura o adjunta una foto del récipe original para el registro.
-        </p>
-
-        {#if fotoCapturada}
-          <div
-            class="rounded-lg bg-emerald-50 border border-emerald-200 p-4 flex items-center gap-3"
-          >
-            <ImageIcon size={20} class="text-emerald-600 shrink-0" />
-            <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium text-emerald-800">Foto capturada</p>
-              <p class="text-xs text-emerald-600">recipe_externo.jpg</p>
-            </div>
-            <button
-              type="button"
-              onclick={() => (fotoCapturada = false)}
-              class="text-xs font-medium text-emerald-700 hover:text-emerald-900 transition-colors"
-            >
-              Cambiar
-            </button>
+          <div class="relative">
+            <Link size={16} class="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+            <input
+              id="adjunto-url"
+              type="url"
+              bind:value={adjuntoUrl}
+              placeholder="https://..."
+              class="w-full rounded-lg border border-gray-300 pl-9 pr-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-0"
+              style={errors.foto ? 'border-color: #ef4444;' : ''}
+            />
           </div>
-        {:else}
-          <div
-            class="rounded-lg border-2 border-dashed border-gray-200 bg-gray-50 flex flex-col items-center justify-center gap-2 py-8"
-          >
-            <Camera size={28} class="text-gray-300" />
-            <p class="text-sm font-medium text-gray-500">Tomar foto o adjuntar</p>
-            <p class="text-xs text-gray-400">JPG, PNG — máx. 10 MB</p>
-          </div>
-          <button
-            type="button"
-            onclick={() => (fotoCapturada = true)}
-            class="flex items-center justify-center gap-2 rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
-          >
-            <Camera size={16} />
-            Simular captura de foto
-          </button>
           {#if errors.foto}
             <p class="flex items-center gap-1 text-xs text-red-600">
               <AlertTriangle size={12} />
               {errors.foto}
             </p>
           {/if}
-        {/if}
+        </div>
+
+        <!-- Indicaciones -->
+        <div class="flex flex-col gap-1.5">
+          <label for="indicaciones" class="text-sm font-medium text-gray-700">
+            Indicaciones <span class="text-gray-400 font-normal">(opcional)</span>
+          </label>
+          <textarea
+            id="indicaciones"
+            bind:value={indicaciones}
+            placeholder="Notas o indicaciones del récipe..."
+            rows={3}
+            class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-offset-0 resize-none"
+          ></textarea>
+        </div>
       </div>
 
-      <!-- Section 3: Medicamentos -->
+      <!-- Section 2: Medicamentos a dispensar -->
       <div class="rounded-xl border bg-white p-4 flex flex-col gap-3">
         <p class="text-xs font-medium text-gray-400 uppercase tracking-wide">
           Medicamentos a dispensar
@@ -284,7 +226,7 @@
                 <div class="flex-1 min-w-0">
                   <p class="text-sm font-medium text-gray-900">{linea.nombre}</p>
                   <p class="text-xs text-gray-500">
-                    {linea.cantidad} uds × Bs. {linea.precioUnit.toFixed(2)}
+                    {linea.cantidadDespachada} uds × Bs. {linea.precioUnitario.toFixed(2)}
                   </p>
                 </div>
                 <button
@@ -324,12 +266,19 @@
           </div>
         {/if}
       </div>
+
+      {#if $recipeMutation.isError}
+        <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3">
+          <p class="flex items-center gap-2 text-sm text-red-700">
+            <AlertTriangle size={16} />
+            {($recipeMutation.error as { message?: string })?.message ?? 'Error al guardar el récipe.'}
+          </p>
+        </div>
+      {/if}
     </div>
 
     <!-- Fixed bottom bar -->
-    <div
-      class="fixed bottom-0 left-0 right-0 md:pl-64 bg-white border-t px-4 py-3 flex gap-2 z-10"
-    >
+    <div class="fixed bottom-0 left-0 right-0 md:pl-64 bg-white border-t px-4 py-3 flex gap-2 z-10">
       <a
         href="/medical/external-recipes"
         class="flex flex-1 items-center justify-center rounded-xl border border-gray-300 px-4 py-3 text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors"
@@ -339,10 +288,11 @@
       <button
         type="button"
         onclick={handleGuardar}
-        class="flex flex-1 items-center justify-center rounded-xl px-4 py-3 text-sm font-medium text-white transition-colors"
+        disabled={$suppliesQuery.isPending || $recipeMutation.isPending}
+        class="flex flex-1 items-center justify-center rounded-xl px-4 py-3 text-sm font-medium text-white transition-colors disabled:opacity-50"
         style="background-color: #2D6A4F;"
       >
-        Guardar y dispensar
+        {$recipeMutation.isPending ? 'Guardando...' : 'Guardar y dispensar'}
       </button>
     </div>
   </div>
@@ -383,38 +333,41 @@
           </div>
         </div>
 
-        <!-- Insumo list -->
+        <!-- Supply list -->
         <div class="flex-1 overflow-y-auto px-4 pb-4">
-          <div class="flex flex-col divide-y divide-gray-100">
-            {#each filteredInsumos as insumo (insumo.id)}
-              <div class="flex items-center gap-3 py-3">
-                <div class="flex-1 min-w-0">
-                  <p class="text-sm font-medium text-gray-900">{insumo.nombre}</p>
-                  <p class="text-xs text-gray-500">Stock: {insumo.stock}</p>
-                </div>
-                {#if insumo.stock === 0}
-                  <span
-                    class="rounded-full bg-red-50 border border-red-200 text-red-600 text-xs font-medium px-2.5 py-0.5 shrink-0"
-                  >
-                    Agotado
-                  </span>
-                {:else}
+          {#if $suppliesQuery.isPending}
+            <div class="flex flex-col gap-3 pt-2">
+              {#each [1, 2, 3, 4, 5] as _ (_)}
+                <div class="h-14 w-full rounded-lg bg-gray-200 animate-pulse"></div>
+              {/each}
+            </div>
+          {:else if $suppliesQuery.isError}
+            <p class="py-8 text-center text-sm text-red-500">Error al cargar los insumos.</p>
+          {:else}
+            <div class="flex flex-col divide-y divide-gray-100">
+              {#each filteredSupplies as supply (supply.id)}
+                <div class="flex items-center gap-3 py-3">
+                  <div class="flex-1 min-w-0">
+                    <p class="text-sm font-medium text-gray-900">{getSupplyName(supply)}</p>
+                    <p class="text-xs text-gray-500">Stock: {supply.stockDisponible}</p>
+                  </div>
                   <input
                     type="number"
-                    min="1"
-                    max={insumo.stock}
+                    min="0.001"
+                    max={supply.stockDisponible}
+                    step="0.001"
                     placeholder="0"
-                    bind:value={insumoQtys[insumo.id]}
+                    bind:value={insumoQtys[supply.id]}
                     class="w-20 rounded-lg border border-gray-300 px-2 py-1.5 text-sm text-center focus:outline-none focus:ring-2 focus:ring-offset-0 shrink-0"
                   />
-                {/if}
-              </div>
-            {/each}
+                </div>
+              {/each}
 
-            {#if filteredInsumos.length === 0}
-              <p class="py-8 text-center text-sm text-gray-400">Sin resultados</p>
-            {/if}
-          </div>
+              {#if filteredSupplies.length === 0}
+                <p class="py-8 text-center text-sm text-gray-400">Sin resultados</p>
+              {/if}
+            </div>
+          {/if}
         </div>
 
         <!-- Confirm button -->

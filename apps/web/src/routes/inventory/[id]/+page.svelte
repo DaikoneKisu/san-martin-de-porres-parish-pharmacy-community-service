@@ -8,32 +8,30 @@
     Pill,
     Stethoscope,
     ArrowRightLeft,
-    ChevronDown,
-    ChevronUp,
-    ArrowDown,
-    ArrowUp,
     CheckCircle2,
     X,
-    Clock,
+    Info,
   } from 'lucide-svelte';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import StockIndicator from '$lib/components/custom/stock-indicator.svelte';
   import ExpiryIndicator from '$lib/components/custom/expiry-indicator.svelte';
+  import { api } from '$lib/api';
 
-  const INSUMOS = [
-    { id: 'inv1', tipo: 'medicamento', nombre: 'Paracetamol 500mg', presentacion: 'Caja x 20 tab', stockDisponible: 8, cantidadInicial: 15, fechaVencimiento: '2026-06-30', lote: 'L2025-01', precioRef: 80, categoria: 'Analgésico', principioActivo: 'Paracetamol', laboratorio: 'Lab. Nacional', formaFarmaceutica: 'Tableta', empaque: 'Caja', observaciones: '' },
-    { id: 'inv2', tipo: 'medicamento', nombre: 'Ibuprofeno 400mg', presentacion: 'Caja x 10 tab', stockDisponible: 2, cantidadInicial: 10, fechaVencimiento: '2026-09-15', lote: 'L2025-02', precioRef: 75, categoria: 'Antiinflamatorio', principioActivo: 'Ibuprofeno', laboratorio: 'Farma Bolívar', formaFarmaceutica: 'Tableta', empaque: 'Caja', observaciones: 'Usar con comida' },
-    { id: 'inv3', tipo: 'medicamento', nombre: 'Amoxicilina 500mg', presentacion: 'Caja x 12 cap', stockDisponible: 0, cantidadInicial: 5, fechaVencimiento: '2026-03-01', lote: 'L2025-03', precioRef: 120, categoria: 'Antibiótico', principioActivo: 'Amoxicilina', laboratorio: 'BioFarma', formaFarmaceutica: 'Cápsula', empaque: 'Caja', observaciones: '' },
-    { id: 'inv4', tipo: 'material', nombre: 'Guantes de látex', presentacion: 'Caja x 100 uds', stockDisponible: 4, cantidadInicial: 10, fechaVencimiento: '2027-01-01', lote: 'L2025-04', precioRef: 300, categoria: 'Protección', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-    { id: 'inv5', tipo: 'medicamento', nombre: 'Vitamina C 500mg', presentacion: 'Frasco x 30 comp', stockDisponible: 9, cantidadInicial: 9, fechaVencimiento: '2026-12-31', lote: 'L2025-05', precioRef: 60, categoria: 'Vitaminas', principioActivo: 'Ácido ascórbico', laboratorio: 'Vitapharma', formaFarmaceutica: 'Comprimido', empaque: 'Frasco', observaciones: '' },
-    { id: 'inv6', tipo: 'material', nombre: 'Gasas estériles', presentacion: 'Caja x 50 uds', stockDisponible: 1, cantidadInicial: 8, fechaVencimiento: '2027-06-30', lote: 'L2025-06', precioRef: 150, categoria: 'Curaciones', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-    { id: 'inv7', tipo: 'material', nombre: 'Jeringas 5ml', presentacion: 'Caja x 100 uds', stockDisponible: 6, cantidadInicial: 6, fechaVencimiento: '2028-01-01', lote: 'L2025-07', precioRef: 190, categoria: 'Inyectables', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-  ];
+  const queryClient = useQueryClient();
 
-  const HISTORIAL = [
-    { id: 'h1', fecha: '2025-03-20', tipo: 'dispensacion', cantidad: 2, paciente: 'Ana Torres', personal: 'Lic. López' },
-    { id: 'h2', fecha: '2025-03-10', tipo: 'dispensacion', cantidad: 1, paciente: 'Juan Pérez', personal: 'Lic. García' },
-    { id: 'h3', fecha: '2025-02-15', tipo: 'ingreso', cantidad: 5, paciente: '', personal: 'Sistema' },
-  ];
+  const id = $derived(page.params.id ?? '');
+
+  const supplyQuery = createQuery({
+    get queryKey() { return ['supply', id]; },
+    queryFn: async () => {
+      const res = await api.api.inventory.supplies({ id }).get();
+      if (res.error) throw new Error((res.error as any)?.value?.message ?? 'Error al cargar el insumo.');
+      return res.data as any;
+    },
+    get enabled() { return id !== ''; },
+  });
+
+  const supply = $derived($supplyQuery.data ?? null);
 
   // Drawer state
   let dispensarDrawerOpen = $state(false);
@@ -42,11 +40,69 @@
   let dispensarError = $state('');
   let dispensarGuardado = $state(false);
 
-  // Collapsible historial
-  let historialAbierto = $state(false);
+  const dispensarMutation = createMutation({
+    mutationFn: async (body: { cantidadDespachada: number; precioUnitario: number }) => {
+      const res = await api.api.inventory.supplies({ id }).dispense.post(body);
+      if (res.error) throw new Error((res.error as any)?.value?.message ?? 'Error al registrar la dispensación.');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['supply', id] });
+      queryClient.invalidateQueries({ queryKey: ['supplies'] });
+      dispensarGuardado = true;
+    },
+    onError: (err: Error) => {
+      dispensarError = err.message;
+    },
+  });
 
-  // Derived: find insumo by route param
-  const insumo = $derived(INSUMOS.find((i) => i.id === page.params.id));
+  function getNombreInsumo(s: any): string {
+    if (s.materialQuirurgico) return s.materialQuirurgico.nombre;
+    if (s.presentacionMedicamento) {
+      const med = s.presentacionMedicamento.medicamento;
+      if (med.marca.esGenerico && med.principiosActivos.length > 0) {
+        return (
+          med.principiosActivos
+            .map((pa: any) => `${pa.principioActivo.nombre} ${pa.concentracion}`)
+            .join(' + ') + ` — ${med.marca.laboratorio.nombre}`
+        );
+      }
+      return med.marca.nombre;
+    }
+    return 'Sin nombre';
+  }
+
+  function getPresentacion(s: any): string {
+    if (s.presentacionMedicamento) return s.presentacionMedicamento.empaque.nombre;
+    return '';
+  }
+
+  function getPrincipiosActivos(s: any): string {
+    if (!s.presentacionMedicamento) return '';
+    return s.presentacionMedicamento.medicamento.principiosActivos
+      .map((pa: any) => `${pa.principioActivo.nombre} ${pa.concentracion}`)
+      .join(', ');
+  }
+
+  function getLaboratorio(s: any): string {
+    if (!s.presentacionMedicamento) return '';
+    return s.presentacionMedicamento.medicamento.marca.laboratorio.nombre;
+  }
+
+  function getFormaFarmaceutica(s: any): string {
+    if (!s.presentacionMedicamento) return '';
+    return s.presentacionMedicamento.formaFarmaceutica.nombre;
+  }
+
+  function getViaAdministracion(s: any): string {
+    if (!s.presentacionMedicamento) return '';
+    return s.presentacionMedicamento.viaAdministracion.nombre;
+  }
+
+  function getCategorias(s: any): string {
+    if (!s.presentacionMedicamento) return '';
+    return s.presentacionMedicamento.medicamento.categorias.map((c: any) => c.nombre).join(', ');
+  }
 
   function formatFecha(iso: string): string {
     return DateTime.fromISO(iso).setLocale('es').toFormat("d 'de' LLLL yyyy");
@@ -55,16 +111,23 @@
   function handleDispensar() {
     dispensarError = '';
     const cantidad = Number(dispensarCantidad);
+    const precio = Number(dispensarPrecio);
+
     if (!dispensarCantidad || isNaN(cantidad) || cantidad <= 0) {
       dispensarError = 'Ingrese una cantidad válida mayor a 0.';
       return;
     }
-    if (!insumo) return;
-    if (cantidad > insumo.stockDisponible) {
-      dispensarError = `La cantidad no puede superar el stock disponible (${insumo.stockDisponible} uds).`;
+    if (!supply) return;
+    if (cantidad > supply.stockDisponible) {
+      dispensarError = `La cantidad no puede superar el stock disponible (${supply.stockDisponible} uds).`;
       return;
     }
-    dispensarGuardado = true;
+    if (!dispensarPrecio || isNaN(precio) || precio <= 0) {
+      dispensarError = 'Ingrese un precio de referencia válido mayor a 0.';
+      return;
+    }
+
+    $dispensarMutation.mutate({ cantidadDespachada: cantidad, precioUnitario: precio });
   }
 
   function handleCerrarDispensar() {
@@ -78,10 +141,32 @@
   }
 </script>
 
-{#if !insumo}
-  <!-- Not found state -->
+{#if $supplyQuery.isPending}
+  <div class="flex flex-col min-h-screen bg-gray-50 animate-pulse">
+    <!-- Sticky header skeleton -->
+    <header class="sticky top-0 z-10 bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3">
+      <div class="size-8 rounded-md shrink-0 bg-gray-200"></div>
+      <div class="flex-1 h-5 rounded bg-gray-200"></div>
+      <div class="h-8 w-20 rounded-lg shrink-0 bg-gray-200"></div>
+    </header>
+    <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full space-y-4">
+      <div class="flex gap-2">
+        <div class="h-6 w-24 rounded-full bg-gray-200"></div>
+        <div class="h-6 w-24 rounded-full bg-gray-200"></div>
+      </div>
+      <div class="h-48 w-full rounded-xl bg-gray-200"></div>
+      <div class="h-12 w-full rounded-xl bg-gray-200"></div>
+    </main>
+  </div>
+{:else if $supplyQuery.isError || !supply}
+  <!-- Error / not found state -->
   <div class="flex flex-col min-h-screen items-center justify-center gap-4 bg-gray-50 px-4 text-center">
-    <p class="text-lg font-semibold text-gray-700">Insumo no encontrado</p>
+    <p class="text-lg font-semibold text-gray-700">
+      {$supplyQuery.isError ? 'Error al cargar el insumo.' : 'Insumo no encontrado.'}
+    </p>
+    {#if $supplyQuery.error}
+      <p class="text-sm text-gray-500">{($supplyQuery.error as Error).message}</p>
+    {/if}
     <a
       href="/inventory"
       class="inline-flex items-center gap-1.5 text-sm text-primary hover:underline"
@@ -102,10 +187,10 @@
         <ArrowLeft class="size-5" />
       </a>
 
-      <h1 class="flex-1 text-base font-semibold text-gray-900 truncate">{insumo.nombre}</h1>
+      <h1 class="flex-1 text-base font-semibold text-gray-900 truncate">{getNombreInsumo(supply)}</h1>
 
       <a
-        href="/inventory/{insumo.id}/edit"
+        href="/inventory/{supply.id}/edit"
         class="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-lg border border-gray-300 text-gray-700 bg-white hover:bg-gray-50 transition-colors"
       >
         <Pencil class="size-4" />
@@ -116,21 +201,21 @@
     <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full space-y-4">
       <!-- Badges row -->
       <div class="flex flex-wrap items-center gap-2">
-        <StockIndicator stockDisponible={insumo.stockDisponible} cantidadInicial={insumo.cantidadInicial} />
-        <ExpiryIndicator fechaVencimiento={insumo.fechaVencimiento} />
+        <StockIndicator stockDisponible={supply.stockDisponible} cantidadInicial={supply.cantidad} />
+        <ExpiryIndicator fechaVencimiento={supply.fechaVencimiento} />
       </div>
 
       <!-- Info card -->
       <div class="rounded-xl border border-gray-200 bg-white p-4">
-        <!-- Tipo + categoria -->
+        <!-- Tipo -->
         <div class="flex items-center gap-2.5">
           <span
             class={[
               'shrink-0 flex items-center justify-center rounded-lg p-2',
-              insumo.tipo === 'medicamento' ? 'bg-primary/10 text-primary' : 'bg-blue-100 text-blue-600',
+              supply.tipo === 'MEDICAMENTO' ? 'bg-primary/10 text-primary' : 'bg-blue-100 text-blue-600',
             ].join(' ')}
           >
-            {#if insumo.tipo === 'medicamento'}
+            {#if supply.tipo === 'MEDICAMENTO'}
               <Pill class="size-5" />
             {:else}
               <Stethoscope class="size-5" />
@@ -138,11 +223,13 @@
           </span>
           <div class="flex flex-wrap items-center gap-2">
             <span class="text-sm font-medium text-gray-800">
-              {insumo.tipo === 'medicamento' ? 'Medicamento' : 'Material médico'}
+              {supply.tipo === 'MEDICAMENTO' ? 'Medicamento' : 'Material médico'}
             </span>
-            <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
-              {insumo.categoria}
-            </span>
+            {#if supply.tipo === 'MEDICAMENTO' && getCategorias(supply)}
+              <span class="text-xs font-medium px-2 py-0.5 rounded-full bg-gray-100 text-gray-600 border border-gray-200">
+                {getCategorias(supply)}
+              </span>
+            {/if}
           </div>
         </div>
 
@@ -150,134 +237,71 @@
 
         <!-- Info rows -->
         <dl class="space-y-2">
-          <div class="flex items-start justify-between gap-4">
-            <dt class="text-xs text-gray-500 shrink-0">Presentación</dt>
-            <dd class="text-xs font-medium text-gray-800 text-right">{insumo.presentacion}</dd>
-          </div>
+          {#if getPresentacion(supply)}
+            <div class="flex items-start justify-between gap-4">
+              <dt class="text-xs text-gray-500 shrink-0">Presentación</dt>
+              <dd class="text-xs font-medium text-gray-800 text-right">{getPresentacion(supply)}</dd>
+            </div>
+          {/if}
           <div class="flex items-start justify-between gap-4">
             <dt class="text-xs text-gray-500 shrink-0">Lote</dt>
-            <dd class="text-xs font-medium text-gray-800 text-right">{insumo.lote}</dd>
+            <dd class="text-xs font-medium text-gray-800 text-right">{supply.numeroLote}</dd>
           </div>
           <div class="flex items-start justify-between gap-4">
             <dt class="text-xs text-gray-500 shrink-0">Vencimiento</dt>
-            <dd class="text-xs font-medium text-gray-800 text-right capitalize">{formatFecha(insumo.fechaVencimiento)}</dd>
+            <dd class="text-xs font-medium text-gray-800 text-right capitalize">{formatFecha(supply.fechaVencimiento)}</dd>
           </div>
           <div class="flex items-start justify-between gap-4">
             <dt class="text-xs text-gray-500 shrink-0">Precio ref.</dt>
-            <dd class="text-xs font-medium text-gray-800 text-right">Bs. {insumo.precioRef.toFixed(2)}</dd>
+            <dd class="text-xs font-medium text-gray-800 text-right">Bs. {supply.precioUnitarioReferencial.toFixed(2)}</dd>
           </div>
 
-          {#if insumo.tipo === 'medicamento'}
-            {#if insumo.principioActivo}
+          {#if supply.tipo === 'MEDICAMENTO'}
+            {#if getPrincipiosActivos(supply)}
               <div class="flex items-start justify-between gap-4">
                 <dt class="text-xs text-gray-500 shrink-0">Principio activo</dt>
-                <dd class="text-xs font-medium text-gray-800 text-right">{insumo.principioActivo}</dd>
+                <dd class="text-xs font-medium text-gray-800 text-right">{getPrincipiosActivos(supply)}</dd>
               </div>
             {/if}
-            {#if insumo.laboratorio}
+            {#if getLaboratorio(supply)}
               <div class="flex items-start justify-between gap-4">
                 <dt class="text-xs text-gray-500 shrink-0">Laboratorio</dt>
-                <dd class="text-xs font-medium text-gray-800 text-right">{insumo.laboratorio}</dd>
+                <dd class="text-xs font-medium text-gray-800 text-right">{getLaboratorio(supply)}</dd>
               </div>
             {/if}
-            {#if insumo.formaFarmaceutica}
+            {#if getFormaFarmaceutica(supply)}
               <div class="flex items-start justify-between gap-4">
                 <dt class="text-xs text-gray-500 shrink-0">Forma farmacéutica</dt>
-                <dd class="text-xs font-medium text-gray-800 text-right">{insumo.formaFarmaceutica}</dd>
+                <dd class="text-xs font-medium text-gray-800 text-right">{getFormaFarmaceutica(supply)}</dd>
               </div>
             {/if}
-            {#if insumo.empaque}
+            {#if getViaAdministracion(supply)}
               <div class="flex items-start justify-between gap-4">
-                <dt class="text-xs text-gray-500 shrink-0">Empaque</dt>
-                <dd class="text-xs font-medium text-gray-800 text-right">{insumo.empaque}</dd>
+                <dt class="text-xs text-gray-500 shrink-0">Vía de administración</dt>
+                <dd class="text-xs font-medium text-gray-800 text-right">{getViaAdministracion(supply)}</dd>
               </div>
             {/if}
           {/if}
         </dl>
-
-        {#if insumo.observaciones}
-          <hr class="border-gray-200 my-3" />
-          <p class="text-xs italic text-gray-500">{insumo.observaciones}</p>
-        {/if}
       </div>
 
       <!-- Dispensar button -->
       <button
         type="button"
         onclick={() => { dispensarDrawerOpen = true; }}
-        disabled={insumo.stockDisponible === 0}
+        disabled={supply.stockDisponible === 0}
         class="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-primary py-3 text-sm font-semibold text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
       >
         <ArrowRightLeft class="size-4" />
         Registrar dispensación
       </button>
 
-      <!-- Historial collapsible -->
-      <div class="rounded-xl border border-gray-200 bg-white overflow-hidden">
-        <button
-          type="button"
-          onclick={() => { historialAbierto = !historialAbierto; }}
-          class="w-full flex items-center justify-between px-4 py-3 text-sm font-medium text-gray-800 hover:bg-gray-50 transition-colors"
-        >
-          <span class="flex items-center gap-2">
-            <Clock class="size-4 text-gray-400" />
-            Historial de movimientos
-          </span>
-          {#if historialAbierto}
-            <ChevronUp class="size-4 text-gray-400" />
-          {:else}
-            <ChevronDown class="size-4 text-gray-400" />
-          {/if}
-        </button>
-
-        {#if historialAbierto}
-          <div class="border-t border-gray-100">
-            {#if HISTORIAL.length === 0}
-              <p class="px-4 py-6 text-center text-xs text-gray-400">Sin movimientos registrados.</p>
-            {:else}
-              <ul class="divide-y divide-gray-100">
-                {#each HISTORIAL as mov (mov.id)}
-                  <li class="flex items-start gap-3 px-4 py-3">
-                    <!-- Type icon -->
-                    <span
-                      class={[
-                        'mt-0.5 shrink-0 flex items-center justify-center rounded-full p-1.5',
-                        mov.tipo === 'ingreso'
-                          ? 'bg-emerald-100 text-emerald-600'
-                          : 'bg-primary/10 text-primary',
-                      ].join(' ')}
-                    >
-                      {#if mov.tipo === 'ingreso'}
-                        <ArrowDown class="size-3.5" />
-                      {:else}
-                        <ArrowUp class="size-3.5" />
-                      {/if}
-                    </span>
-
-                    <!-- Details -->
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center justify-between gap-2">
-                        <span class="text-xs font-semibold text-gray-700">
-                          {mov.tipo === 'ingreso' ? 'Ingreso' : 'Dispensación'}
-                        </span>
-                        <span class="text-xs text-gray-400 shrink-0 capitalize">
-                          {DateTime.fromISO(mov.fecha).setLocale('es').toFormat("d 'de' LLLL yyyy")}
-                        </span>
-                      </div>
-                      <p class="text-xs text-gray-500 mt-0.5">
-                        {mov.cantidad} ud{mov.cantidad !== 1 ? 's' : ''}
-                        {#if mov.paciente}
-                          · {mov.paciente}
-                        {/if}
-                        · {mov.personal}
-                      </p>
-                    </div>
-                  </li>
-                {/each}
-              </ul>
-            {/if}
-          </div>
-        {/if}
+      <!-- Historial note -->
+      <div class="flex items-start gap-3 rounded-xl border border-blue-100 bg-blue-50 px-4 py-3">
+        <Info class="mt-0.5 size-4 shrink-0 text-blue-500" />
+        <p class="text-xs text-blue-700">
+          El historial de movimientos se encuentra en el módulo de Auditoría.
+        </p>
       </div>
     </main>
   </div>
@@ -309,9 +333,9 @@
 
             <!-- Insumo info row -->
             <div class="flex items-center justify-between gap-3 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2.5 mb-4">
-              <span class="text-sm font-medium text-gray-800 truncate">{insumo.nombre}</span>
+              <span class="text-sm font-medium text-gray-800 truncate">{getNombreInsumo(supply)}</span>
               <span class="shrink-0 text-xs font-medium px-2 py-0.5 rounded-full bg-white border border-gray-200 text-gray-600">
-                {insumo.stockDisponible} uds
+                {supply.stockDisponible} uds
               </span>
             </div>
 
@@ -326,7 +350,7 @@
                   id="dispensar-cantidad"
                   type="number"
                   min="1"
-                  max={insumo.stockDisponible}
+                  max={supply.stockDisponible}
                   bind:value={dispensarCantidad}
                   placeholder="0"
                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
@@ -336,15 +360,15 @@
               <!-- Precio ref -->
               <div class="space-y-1">
                 <label for="dispensar-precio" class="text-xs font-medium text-gray-700">
-                  Precio de referencia (Bs.)
+                  Precio de referencia (Bs.) <span class="text-red-500">*</span>
                 </label>
                 <input
                   id="dispensar-precio"
                   type="number"
                   step="0.01"
-                  min="0"
+                  min="0.01"
                   bind:value={dispensarPrecio}
-                  placeholder={insumo.precioRef.toString()}
+                  placeholder={supply.precioUnitarioReferencial.toString()}
                   class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
                 />
               </div>
@@ -359,9 +383,10 @@
             <button
               type="button"
               onclick={handleDispensar}
-              class="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors"
+              disabled={$dispensarMutation.isPending}
+              class="mt-6 w-full inline-flex items-center justify-center gap-2 rounded-lg bg-primary py-2.5 text-sm font-semibold text-white hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Registrar
+              {$dispensarMutation.isPending ? 'Registrando...' : 'Registrar'}
             </button>
           {:else}
             <!-- Success state -->

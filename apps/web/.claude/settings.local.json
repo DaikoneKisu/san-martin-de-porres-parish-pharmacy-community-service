@@ -7,7 +7,18 @@
       "Bash(rm \"/c/Users/eduar/Projects/Universitarios/san-martin-de-porres-parish-pharmacy-community-service/code/apps/web/src/index.ts\")",
       "Bash(bun install *)",
       "Bash(echo \"PUBLIC_API_URL=http://localhost:3000\")",
-      "Bash(bun run *)"
+      "Bash(bun run *)",
+      "Bash(dir /s /b \"C:\\\\Users\\\\eduar\\\\Projects\\\\Universitarios\\\\san-martin-de-porres-parish-pharmacy-community-service\\\\code\\\\apps\\\\web\\\\src\\\\routes\\\\donations\")",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\(json.dumps\\(d.get\\('exports',{}\\), indent=2\\)\\)\")",
+      "Bash(dir /s /b \"C:\\\\Users\\\\eduar\\\\Projects\\\\Universitarios\\\\san-martin-de-porres-parish-pharmacy-community-service\\\\code\\\\apps\\\\web\\\\src\\\\routes\\\\inventory\")",
+      "Bash(mkdir -p \"C:/Users/eduar/Projects/Universitarios/san-martin-de-porres-parish-pharmacy-community-service/code/apps/web/src/routes/medical/appointments/[id]/recipe\")",
+      "Bash(mkdir -p \"C:/Users/eduar/Projects/Universitarios/san-martin-de-porres-parish-pharmacy-community-service/code/apps/web/src/routes/medical/patients/[id]/edit\")",
+      "Bash(mkdir -p \"C:/Users/eduar/Projects/Universitarios/san-martin-de-porres-parish-pharmacy-community-service/code/apps/web/src/routes/medical/external-recipes/[id]\")",
+      "Read(//c/Users/eduar/Projects/Universitarios/san-martin-de-porres-parish-pharmacy-community-service/code/**)",
+      "Bash(cat tsconfig.base.json)",
+      "Bash(bunx prisma *)",
+      "Bash(grep \"src\\\\\\\\\\\\\\\\routes\")",
+      "Bash(grep -v \"api\\\\\\\\\\\\\\\\src\")"
     ]
   },
   "enabledPlugins": {

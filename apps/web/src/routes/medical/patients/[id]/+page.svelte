@@ -1,6 +1,7 @@
 <script lang="ts">
+  import { page } from '$app/state';
+  import { createQuery } from '@tanstack/svelte-query';
   import { DateTime } from 'luxon';
-  import { Drawer } from 'vaul-svelte';
   import {
     ArrowLeft,
     Pencil,
@@ -13,131 +14,75 @@
     ChevronUp,
     ChevronRight,
     Plus,
-    CheckCircle2,
-    X,
+    AlertCircle,
   } from 'lucide-svelte';
-
-  const PACIENTE = {
-    id: '1',
-    nombre: 'Ana Sofía',
-    apellido: 'Ramírez Torres',
-    cedula: 'V-12.345.678',
-    fechaNac: '1985-06-15',
-    sexo: 'F',
-    telefono: '0414-1234567',
-    direccion: 'Urb. San Félix, Calle 3, Casa 12',
-  };
-
-  const ANTECEDENTES = [
-    {
-      id: 'a1',
-      tipo: 'patologico',
-      descripcion: 'Hipertensión arterial diagnosticada en 2018. Bajo control con Enalapril.',
-      fecha: '2018-03-10',
-    },
-    {
-      id: 'a2',
-      tipo: 'quirurgico',
-      descripcion: 'Apendicectomía. Sin complicaciones.',
-      fecha: '2010-07-22',
-    },
-    {
-      id: 'a3',
-      tipo: 'alergico',
-      descripcion: 'Alergia a la Penicilina. Reacción cutánea moderada.',
-      fecha: '2005-01-15',
-    },
-  ];
-
-  const CITAS_RECIENTES = [
-    {
-      id: 'c1',
-      fecha: '2025-04-10',
-      medico: 'Dra. García',
-      estado: 'completada',
-      motivo: 'Control de presión arterial',
-    },
-    {
-      id: 'c2',
-      fecha: '2025-02-28',
-      medico: 'Dr. Rodríguez',
-      estado: 'completada',
-      motivo: 'Dolor de cabeza persistente',
-    },
-    {
-      id: 'c3',
-      fecha: '2025-06-01',
-      medico: 'Dra. García',
-      estado: 'pendiente',
-      motivo: 'Control rutinario',
-    },
-  ];
-
-  const TIPO_LABELS: Record<string, { label: string; color: string }> = {
-    patologico: { label: 'Patológico', color: 'bg-red-50 text-red-700 border-red-200' },
-    quirurgico: { label: 'Quirúrgico', color: 'bg-amber-50 text-amber-700 border-amber-200' },
-    alergico: { label: 'Alérgico', color: 'bg-orange-50 text-orange-700 border-orange-200' },
-    familiar: { label: 'Familiar', color: 'bg-blue-50 text-blue-700 border-blue-200' },
-    otro: { label: 'Otro', color: 'bg-gray-100 text-gray-600 border-gray-300' },
-  };
+  import { api } from '$lib/api';
 
   const ESTADO_BADGE: Record<string, string> = {
-    completada: 'bg-emerald-50 text-emerald-700 border-emerald-300',
-    pendiente: 'bg-blue-50 text-blue-700 border-blue-200',
-    cancelada: 'bg-gray-100 text-gray-500 border-gray-300',
+    COMPLETADA: 'bg-emerald-50 text-emerald-700 border-emerald-300',
+    PENDIENTE: 'bg-blue-50 text-blue-700 border-blue-200',
+    CANCELADA: 'bg-gray-100 text-gray-500 border-gray-300',
+  };
+
+  const ESTADO_LABEL: Record<string, string> = {
+    COMPLETADA: 'Completada',
+    PENDIENTE: 'Pendiente',
+    CANCELADA: 'Cancelada',
   };
 
   function calcEdad(fechaNac: string): number {
-    return Math.floor(Math.abs(DateTime.fromISO(fechaNac).diffNow('years').years));
+    return Math.abs(Math.floor(DateTime.fromISO(fechaNac).diffNow('years').years));
   }
 
   function formatFecha(iso: string): string {
     return DateTime.fromISO(iso).setLocale('es').toFormat("dd 'de' LLLL yyyy");
   }
 
+  function formatFechaHora(iso: string): string {
+    return DateTime.fromISO(iso).setLocale('es').toFormat("dd 'de' LLLL yyyy, hh:mm a");
+  }
+
+  function getIniciales(nombre: string): string {
+    const parts = nombre.trim().split(/\s+/);
+    if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+    return parts[0].slice(0, 2).toUpperCase();
+  }
+
   let antecedentesOpen = $state(true);
   let citasOpen = $state(false);
-  let antDrawerOpen = $state(false);
-  let editAnt = $state<(typeof ANTECEDENTES)[0] | null>(null);
-  let antForm = $state({ tipo: 'patologico', descripcion: '', fecha: '' });
-  let antErrors = $state<{ descripcion?: string; tipo?: string }>({});
-  let antGuardado = $state(false);
 
-  function openNuevoAnt() {
-    antForm = { tipo: 'patologico', descripcion: '', fecha: '' };
-    editAnt = null;
-    antErrors = {};
-    antGuardado = false;
-    antDrawerOpen = true;
-  }
+  const patientQuery = createQuery({
+    get queryKey() { return ['patient', page.params.id ?? '']; },
+    queryFn: async () => {
+      const id: string = page.params.id ?? '';
+      const res = await api.api.medical.patients({ id }).get();
+      if (res.error) throw new Error((res.error as any)?.message ?? 'Error al cargar paciente');
+      return res.data;
+    },
+    get enabled() { return !!page.params.id; },
+  });
 
-  function openEditAnt(a: (typeof ANTECEDENTES)[0]) {
-    antForm = { tipo: a.tipo, descripcion: a.descripcion, fecha: a.fecha };
-    editAnt = a;
-    antErrors = {};
-    antGuardado = false;
-    antDrawerOpen = true;
-  }
+  const antecedentsQuery = createQuery({
+    get queryKey() { return ['antecedents', page.params.id ?? '']; },
+    queryFn: async () => {
+      const id: string = page.params.id ?? '';
+      const res = await api.api.medical.patients({ id }).antecedents.get();
+      if (res.error) throw new Error((res.error as any)?.message ?? 'Error al cargar antecedentes');
+      return res.data ?? [];
+    },
+    get enabled() { return !!page.params.id; },
+  });
 
-  function handleGuardarAnt() {
-    antErrors = {};
-    if (!antForm.tipo) antErrors.tipo = 'El tipo es requerido.';
-    if (!antForm.descripcion.trim()) antErrors.descripcion = 'La descripción es requerida.';
-    if (antErrors.tipo || antErrors.descripcion) return;
-    antGuardado = true;
-  }
-
-  function handleDrawerClose() {
-    setTimeout(() => {
-      antForm = { tipo: 'patologico', descripcion: '', fecha: '' };
-      antErrors = {};
-      antGuardado = false;
-      editAnt = null;
-    }, 300);
-  }
-
-  const iniciales =
-    `${PACIENTE.nombre.charAt(0)}${PACIENTE.apellido.charAt(0)}`.toUpperCase();
+  const appointmentsQuery = createQuery({
+    get queryKey() { return ['patient-appointments', page.params.id ?? '']; },
+    queryFn: async () => {
+      const patientId: string = page.params.id ?? '';
+      const res = await api.api.medical.appointments.get();
+      if (res.error) throw new Error((res.error as any)?.message ?? 'Error al cargar citas');
+      return (res.data ?? []).filter((c: any) => c.pacienteId === patientId || c.paciente?.id === patientId);
+    },
+    get enabled() { return !!page.params.id; },
+  });
 </script>
 
 <div class="flex min-h-screen flex-col bg-gray-50">
@@ -149,65 +94,96 @@
     <h1 class="min-w-0 flex-1 truncate text-base font-semibold text-gray-900">
       Detalle del paciente
     </h1>
-    <a
-      href="/medical/patients/{PACIENTE.id}/edit"
-      class="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-    >
-      <Pencil class="h-4 w-4" />
-      Editar
-    </a>
+    {#if $patientQuery.data}
+      <a
+        href="/medical/patients/{page.params.id}/edit"
+        class="flex shrink-0 items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+      >
+        <Pencil class="h-4 w-4" />
+        Editar
+      </a>
+    {/if}
   </header>
 
   <!-- Main content -->
   <main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-24 pt-4">
-    <!-- Identidad card -->
-    <div class="flex items-start gap-4 rounded-xl border bg-white p-4">
-      <div
-        class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F]/10 text-xl font-bold text-[#2D6A4F]"
-      >
-        {iniciales}
-      </div>
-      <div class="min-w-0 flex-1">
-        <p class="font-semibold text-gray-900">{PACIENTE.nombre} {PACIENTE.apellido}</p>
-        <p class="text-sm text-gray-500">{PACIENTE.cedula}</p>
-        <div class="mt-2 flex flex-wrap gap-2">
-          <span class="rounded-full border px-2 py-0.5 text-xs text-gray-600">
-            {PACIENTE.sexo === 'F' ? 'Femenino' : 'Masculino'}
-          </span>
-          <span class="rounded-full border px-2 py-0.5 text-xs text-gray-600">
-            {calcEdad(PACIENTE.fechaNac)} años
-          </span>
-        </div>
-      </div>
-    </div>
 
-    <!-- Contacto card -->
-    <div class="flex flex-col gap-3 rounded-xl border bg-white p-4">
-      <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Contacto</p>
-      <div class="flex items-start gap-3">
-        <Calendar class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-        <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
-          <span class="text-sm text-gray-500">Fecha de nacimiento</span>
-          <span class="text-sm font-medium text-gray-800">{formatFecha(PACIENTE.fechaNac)}</span>
+    <!-- Patient identity card -->
+    {#if $patientQuery.isPending}
+      <div class="flex items-start gap-4 rounded-xl border bg-white p-4 animate-pulse">
+        <div class="h-14 w-14 shrink-0 rounded-full bg-gray-200"></div>
+        <div class="flex min-w-0 flex-1 flex-col gap-2">
+          <div class="h-4 w-40 rounded bg-gray-200"></div>
+          <div class="h-3 w-28 rounded bg-gray-200"></div>
+          <div class="mt-1 flex gap-2">
+            <div class="h-5 w-20 rounded-full bg-gray-200"></div>
+            <div class="h-5 w-14 rounded-full bg-gray-200"></div>
+          </div>
         </div>
       </div>
-      <hr class="border-gray-100" />
-      <div class="flex items-start gap-3">
-        <Phone class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-        <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
-          <span class="text-sm text-gray-500">Teléfono</span>
-          <span class="text-sm font-medium text-gray-800">{PACIENTE.telefono}</span>
+    {:else if $patientQuery.isError}
+      <div class="flex items-center gap-2 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        <AlertCircle class="h-4 w-4 shrink-0" />
+        <span>No se pudo cargar la información del paciente.</span>
+      </div>
+    {:else if $patientQuery.data}
+      {@const patient = $patientQuery.data}
+      <div class="flex items-start gap-4 rounded-xl border bg-white p-4">
+        <div
+          class="flex h-14 w-14 shrink-0 items-center justify-center rounded-full bg-[#2D6A4F]/10 text-xl font-bold text-[#2D6A4F]"
+        >
+          {getIniciales(patient.nombre)}
+        </div>
+        <div class="min-w-0 flex-1">
+          <p class="font-semibold text-gray-900">{patient.nombre}</p>
+          <p class="text-sm text-gray-500">{patient.cedula}</p>
+          <div class="mt-2 flex flex-wrap gap-2">
+            <span class="rounded-full border px-2 py-0.5 text-xs text-gray-600">
+              {patient.genero === 'M' ? 'Masculino' : 'Femenino'}
+            </span>
+            <span class="rounded-full border px-2 py-0.5 text-xs text-gray-600">
+              {calcEdad(patient.fechaNac)} años
+            </span>
+          </div>
         </div>
       </div>
-      <hr class="border-gray-100" />
-      <div class="flex items-start gap-3">
-        <MapPin class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-        <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
-          <span class="text-sm text-gray-500">Dirección</span>
-          <span class="text-sm font-medium text-gray-800">{PACIENTE.direccion}</span>
+
+      <!-- Contact card -->
+      <div class="flex flex-col gap-3 rounded-xl border bg-white p-4">
+        <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Contacto</p>
+        <div class="flex items-start gap-3">
+          <Calendar class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+          <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
+            <span class="text-sm text-gray-500">Fecha de nacimiento</span>
+            <span class="text-sm font-medium text-gray-800">{formatFecha(patient.fechaNac)}</span>
+          </div>
+        </div>
+        <hr class="border-gray-100" />
+        <div class="flex items-start gap-3">
+          <Phone class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+          <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
+            <span class="text-sm text-gray-500">Teléfono</span>
+            <span class="text-sm font-medium text-gray-800">{patient.telefono}</span>
+          </div>
+        </div>
+        <hr class="border-gray-100" />
+        <div class="flex items-start gap-3">
+          <MapPin class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+          <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
+            <span class="text-sm text-gray-500">Residencia</span>
+            <span class="text-sm font-medium text-gray-800">{patient.residencia}</span>
+          </div>
+        </div>
+        <hr class="border-gray-100" />
+        <div class="flex items-start gap-3">
+          <MapPin class="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+          <div class="flex flex-1 flex-wrap items-center justify-between gap-1">
+            <span class="text-sm text-gray-500">Lugar de nacimiento</span>
+            <span class="text-sm font-medium text-gray-800">{patient.lugarNac}</span>
+          </div>
         </div>
       </div>
-    </div>
+    {/if}
 
     <!-- Antecedentes colapsable -->
     <div class="overflow-hidden rounded-xl border bg-white">
@@ -218,9 +194,11 @@
         <div class="flex items-center gap-2">
           <HeartPulse class="h-5 w-5 text-[#2D6A4F]" />
           <span class="font-medium text-gray-800">Antecedentes médicos</span>
-          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-            {ANTECEDENTES.length}
-          </span>
+          {#if $antecedentsQuery.data}
+            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+              {$antecedentsQuery.data.length}
+            </span>
+          {/if}
         </div>
         {#if antecedentesOpen}
           <ChevronUp class="h-4 w-4 text-gray-400" />
@@ -231,38 +209,62 @@
 
       {#if antecedentesOpen}
         <div class="border-t">
-          {#each ANTECEDENTES as ant, i (ant.id)}
-            {#if i > 0}
-              <hr class="border-gray-100" />
-            {/if}
-            <div class="flex items-start justify-between gap-3 px-4 py-3">
-              <div class="flex min-w-0 flex-1 flex-col gap-1.5">
-                <span
-                  class="inline-flex w-fit rounded-full border px-2 py-0.5 text-xs font-medium {TIPO_LABELS[
-                    ant.tipo
-                  ]?.color ?? TIPO_LABELS.otro.color}"
-                >
-                  {TIPO_LABELS[ant.tipo]?.label ?? ant.tipo}
-                </span>
-                <p class="text-sm text-gray-700">{ant.descripcion}</p>
-                <p class="text-xs text-gray-400">{formatFecha(ant.fecha)}</p>
-              </div>
-              <button
-                onclick={() => openEditAnt(ant)}
-                class="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
-              >
-                <Pencil class="h-4 w-4" />
-              </button>
+          {#if $antecedentsQuery.isPending}
+            <div class="flex flex-col gap-3 px-4 py-3">
+              {#each [0, 1, 2] as n (n)}
+                <div class="h-16 w-full rounded-lg bg-gray-200 animate-pulse"></div>
+              {/each}
             </div>
-          {/each}
+          {:else if $antecedentsQuery.isError}
+            <div class="flex items-center gap-2 px-4 py-3 text-sm text-red-600">
+              <AlertCircle class="h-4 w-4 shrink-0" />
+              <span>No se pudieron cargar los antecedentes.</span>
+            </div>
+          {:else if $antecedentsQuery.data}
+            {#each $antecedentsQuery.data as ant, i (ant.id)}
+              {#if i > 0}
+                <hr class="border-gray-100" />
+              {/if}
+              <div class="flex items-start justify-between gap-3 px-4 py-3">
+                <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                  {#if ant.categorias.length > 0}
+                    <div class="flex flex-wrap gap-1">
+                      {#each ant.categorias as cat (cat.id)}
+                        <span class="inline-flex w-fit rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                          {cat.nombre}
+                        </span>
+                      {/each}
+                    </div>
+                  {:else}
+                    <span class="inline-flex w-fit rounded-full border border-gray-300 bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+                      Antecedente
+                    </span>
+                  {/if}
+                  <p class="text-sm text-gray-700">{ant.descripcion}</p>
+                  <p class="text-xs text-gray-400">
+                    {formatFecha(ant.fechaRegistro ?? ant.ultimaActualizacion)}
+                  </p>
+                </div>
+                <a
+                  href="/medical/patients/{page.params.id}/antecedents/{ant.id}/edit"
+                  class="shrink-0 rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+                >
+                  <Pencil class="h-4 w-4" />
+                </a>
+              </div>
+            {/each}
+            {#if $antecedentsQuery.data.length === 0}
+              <p class="px-4 py-3 text-sm text-gray-400">No hay antecedentes registrados.</p>
+            {/if}
+          {/if}
           <div class="border-t px-4 py-3">
-            <button
-              onclick={openNuevoAnt}
-              class="flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            <a
+              href="/medical/patients/{page.params.id}/antecedents/new"
+              class="flex w-fit items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               <Plus class="h-4 w-4" />
               Agregar antecedente
-            </button>
+            </a>
           </div>
         </div>
       {/if}
@@ -277,9 +279,11 @@
         <div class="flex items-center gap-2">
           <Stethoscope class="h-5 w-5 text-[#2D6A4F]" />
           <span class="font-medium text-gray-800">Citas</span>
-          <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
-            {CITAS_RECIENTES.length}
-          </span>
+          {#if $appointmentsQuery.data}
+            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-600">
+              {$appointmentsQuery.data.length}
+            </span>
+          {/if}
         </div>
         {#if citasOpen}
           <ChevronUp class="h-4 w-4 text-gray-400" />
@@ -290,39 +294,57 @@
 
       {#if citasOpen}
         <div class="border-t">
-          {#each CITAS_RECIENTES as cita, i (cita.id)}
-            {#if i > 0}
-              <hr class="border-gray-100" />
-            {/if}
-            <a
-              href="/medical/appointments/{cita.id}"
-              class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50"
-            >
-              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-                <p class="truncate text-sm font-medium text-gray-800">{cita.motivo}</p>
-                <p class="text-xs text-gray-400">{cita.medico} · {formatFecha(cita.fecha)}</p>
-              </div>
-              <div class="flex shrink-0 items-center gap-2">
-                <span
-                  class="rounded-full border px-2 py-0.5 text-xs font-medium {ESTADO_BADGE[
-                    cita.estado
-                  ] ?? ESTADO_BADGE.cancelada}"
+          {#if $appointmentsQuery.isPending}
+            <div class="flex flex-col gap-3 px-4 py-3">
+              {#each [0, 1] as n (n)}
+                <div class="h-14 w-full rounded-lg bg-gray-200 animate-pulse"></div>
+              {/each}
+            </div>
+          {:else if $appointmentsQuery.isError}
+            <div class="flex items-center gap-2 px-4 py-3 text-sm text-red-600">
+              <AlertCircle class="h-4 w-4 shrink-0" />
+              <span>No se pudieron cargar las citas.</span>
+            </div>
+          {:else if $appointmentsQuery.data}
+            {#if $appointmentsQuery.data.length === 0}
+              <p class="px-4 py-3 text-sm text-gray-400">No hay citas registradas.</p>
+            {:else}
+              {#each $appointmentsQuery.data as cita, i (cita.id)}
+                {#if i > 0}
+                  <hr class="border-gray-100" />
+                {/if}
+                <a
+                  href="/medical/appointments/{cita.id}"
+                  class="flex items-center justify-between gap-3 px-4 py-3 hover:bg-gray-50"
                 >
-                  {cita.estado.charAt(0).toUpperCase() + cita.estado.slice(1)}
-                </span>
-                <ChevronRight class="h-4 w-4 text-gray-400" />
-              </div>
-            </a>
-          {/each}
+                  <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                    <p class="truncate text-sm font-medium text-gray-800">{cita.motivo}</p>
+                    <p class="text-xs text-gray-400">
+                      {cita.personal.nombre} · {formatFechaHora(cita.fechaHora)}
+                    </p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <span
+                      class="rounded-full border px-2 py-0.5 text-xs font-medium {ESTADO_BADGE[cita.estado] ?? ESTADO_BADGE.CANCELADA}"
+                    >
+                      {ESTADO_LABEL[cita.estado] ?? cita.estado}
+                    </span>
+                    <ChevronRight class="h-4 w-4 text-gray-400" />
+                  </div>
+                </a>
+              {/each}
+            {/if}
+          {/if}
         </div>
       {/if}
     </div>
+
   </main>
 
   <!-- Fixed bottom bar -->
   <div class="fixed bottom-0 left-0 right-0 border-t bg-white px-4 py-3 md:pl-64">
     <a
-      href="/medical/appointments/new?paciente={PACIENTE.id}"
+      href="/medical/appointments/new?paciente={page.params.id}"
       class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
     >
       <Plus class="h-4 w-4" />
@@ -330,118 +352,3 @@
     </a>
   </div>
 </div>
-
-<!-- Antecedente Drawer -->
-<Drawer.Root bind:open={antDrawerOpen} onClose={handleDrawerClose}>
-  <Drawer.Portal>
-    <Drawer.Overlay class="fixed inset-0 z-40 bg-black/40" />
-    <Drawer.Content
-      class="fixed bottom-0 left-0 right-0 z-50 flex max-h-[85svh] flex-col rounded-t-2xl bg-white outline-none"
-    >
-      <div class="mx-auto mt-3 h-1.5 w-12 shrink-0 rounded-full bg-gray-300"></div>
-
-      {#if !antGuardado}
-        <div class="flex min-h-0 flex-1 flex-col overflow-y-auto">
-          <!-- Drawer header -->
-          <div class="flex items-start justify-between gap-3 px-4 pb-3 pt-4">
-            <div>
-              <h2 class="text-base font-semibold text-gray-900">
-                {editAnt ? 'Editar' : 'Registrar'} antecedente
-              </h2>
-              <p class="text-sm text-gray-500">{PACIENTE.nombre} {PACIENTE.apellido}</p>
-            </div>
-            <button
-              onclick={() => (antDrawerOpen = false)}
-              class="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100"
-            >
-              <X class="h-5 w-5" />
-            </button>
-          </div>
-
-          <!-- Form -->
-          <div class="flex flex-col gap-4 px-4 pb-4">
-            <!-- Tipo -->
-            <div class="flex flex-col gap-1">
-              <label for="ant-tipo" class="text-xs font-medium text-gray-700">
-                Tipo <span class="text-red-500">*</span>
-              </label>
-              <select
-                id="ant-tipo"
-                bind:value={antForm.tipo}
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
-              >
-                <option value="patologico">Patológico</option>
-                <option value="quirurgico">Quirúrgico</option>
-                <option value="alergico">Alérgico</option>
-                <option value="familiar">Familiar</option>
-                <option value="otro">Otro</option>
-              </select>
-              {#if antErrors.tipo}
-                <p class="mt-0.5 text-xs text-red-600">{antErrors.tipo}</p>
-              {/if}
-            </div>
-
-            <!-- Descripcion -->
-            <div class="flex flex-col gap-1">
-              <label for="ant-descripcion" class="text-xs font-medium text-gray-700">
-                Descripción <span class="text-red-500">*</span>
-              </label>
-              <textarea
-                id="ant-descripcion"
-                bind:value={antForm.descripcion}
-                rows={4}
-                placeholder="Describa el antecedente..."
-                class="w-full resize-none rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
-              ></textarea>
-              {#if antErrors.descripcion}
-                <p class="mt-0.5 text-xs text-red-600">{antErrors.descripcion}</p>
-              {/if}
-            </div>
-
-            <!-- Fecha -->
-            <div class="flex flex-col gap-1">
-              <label for="ant-fecha" class="text-xs font-medium text-gray-700">Fecha</label>
-              <input
-                id="ant-fecha"
-                type="date"
-                bind:value={antForm.fecha}
-                class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
-              />
-            </div>
-
-            <!-- Actions -->
-            <div class="flex gap-2">
-              <button
-                onclick={() => (antDrawerOpen = false)}
-                class="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                Cancelar
-              </button>
-              <button
-                onclick={handleGuardarAnt}
-                class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
-              >
-                Guardar
-              </button>
-            </div>
-          </div>
-        </div>
-      {:else}
-        <div class="flex flex-col items-center gap-4 px-4 py-10">
-          <div
-            class="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50 text-emerald-600"
-          >
-            <CheckCircle2 class="h-7 w-7" />
-          </div>
-          <p class="text-base font-semibold text-gray-900">Antecedente guardado</p>
-          <button
-            onclick={() => (antDrawerOpen = false)}
-            class="rounded-lg bg-[#2D6A4F] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
-          >
-            Cerrar
-          </button>
-        </div>
-      {/if}
-    </Drawer.Content>
-  </Drawer.Portal>
-</Drawer.Root>

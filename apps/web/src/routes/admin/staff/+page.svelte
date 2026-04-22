@@ -2,71 +2,112 @@
   import {
     ArrowLeft, Search, Plus, UserCheck, UserX, ChevronRight,
     Shield, Stethoscope, FlaskConical, ClipboardList, CheckCircle2, X,
+    AlertCircle,
   } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
 
-  type Rol = 'administrador' | 'secretario' | 'doctor' | 'farmaceutico';
+  type Rol = 'administrador' | 'secretario' | 'doctor' | 'farmaceuta';
 
-  interface Personal {
+  interface StaffMember {
     id: string;
     nombre: string;
     cedula: string;
     email: string;
     telefono: string;
-    rol: Rol;
     activo: boolean;
+    roles: { id: string; nombre: string }[];
+    createdAt: string;
   }
 
   const ROL_META: Record<Rol, { label: string; color: string }> = {
     administrador: { label: 'Administrador', color: 'text-[#2D6A4F] bg-[#2D6A4F]/10' },
     secretario:    { label: 'Secretario',    color: 'text-blue-600 bg-blue-50' },
     doctor:        { label: 'Doctor',        color: 'text-emerald-700 bg-emerald-50' },
-    farmaceutico:  { label: 'Farmacéutico',  color: 'text-amber-700 bg-amber-50' },
+    farmaceuta:    { label: 'Farmacéutico',  color: 'text-amber-700 bg-amber-50' },
   };
 
-  const PERSONAL_MOCK: Personal[] = [
-    { id: 'p1', nombre: 'Ana González',    cedula: 'V-12345678', email: 'ana@sanmart.org',    telefono: '0414-1234567', rol: 'administrador', activo: true },
-    { id: 'p2', nombre: 'Carlos Pérez',    cedula: 'V-23456789', email: 'carlos@sanmart.org', telefono: '0424-2345678', rol: 'doctor',        activo: true },
-    { id: 'p3', nombre: 'María Rodríguez', cedula: 'V-34567890', email: 'maria@sanmart.org',  telefono: '0416-3456789', rol: 'farmaceutico',  activo: true },
-    { id: 'p4', nombre: 'Luis Martínez',   cedula: 'V-45678901', email: 'luis@sanmart.org',   telefono: '0426-4567890', rol: 'secretario',    activo: false },
-  ];
+  const ROLES_DISPONIBLES: Rol[] = ['administrador', 'secretario', 'doctor', 'farmaceuta'];
 
-  const CEDULAS_EXISTENTES = PERSONAL_MOCK.map(p => p.cedula);
+  const queryClient = useQueryClient();
+
+  const staffQuery = createQuery({
+    queryKey: ['staff'],
+    queryFn: async () => {
+      const res = await api.api.admin.staff.get();
+      if (res.error) throw new Error(String((res.error as any)?.value ?? 'Error al cargar el personal'));
+      return res.data as StaffMember[];
+    },
+  });
 
   let busqueda = $state('');
   let filtroRol = $state<Rol | 'todos'>('todos');
   let drawerOpen = $state(false);
   let paso = $state<'form' | 'exito'>('form');
+  let exitoEmail = $state('');
+  let submitError = $state<string | null>(null);
   let form = $state({ nombre: '', cedula: '', email: '', telefono: '', rol: '' as Rol | '' });
-  let errors = $state<Partial<{ nombre: string; cedula: string; cedula_dup: string; email: string; rol: string }>>({});
+  let errors = $state<Partial<{ nombre: string; cedula: string; email: string; rol: string }>>({});
 
   const personal = $derived(
-    PERSONAL_MOCK.filter(p => {
+    ($staffQuery.data ?? []).filter((p: StaffMember) => {
       const matchBusqueda = p.nombre.toLowerCase().includes(busqueda.toLowerCase()) || p.cedula.includes(busqueda);
-      const matchRol = filtroRol === 'todos' || p.rol === filtroRol;
+      const matchRol = filtroRol === 'todos' || p.roles.some(r => r.nombre === filtroRol);
       return matchBusqueda && matchRol;
     })
   );
 
-  const activos = $derived(personal.filter(p => p.activo).length);
-  const inactivos = $derived(personal.filter(p => !p.activo).length);
+  const activos = $derived(personal.filter((p: StaffMember) => p.activo).length);
+  const inactivos = $derived(personal.filter((p: StaffMember) => !p.activo).length);
+
+  const mutation = createMutation({
+    mutationFn: async (body: { nombre: string; cedula: string; telefono: string; email: string; roles: string[] }) => {
+      const res = await api.api.admin.staff.post(body);
+      if (res.error) throw new Error(String((res.error as any)?.value ?? 'Error al registrar el personal'));
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['staff'] });
+    },
+  });
+
+  function getPrimaryRol(p: StaffMember): Rol | null {
+    for (const r of ROLES_DISPONIBLES) {
+      if (p.roles.some(pr => pr.nombre === r)) return r;
+    }
+    return null;
+  }
 
   function validate() {
     const e: typeof errors = {};
     if (!form.nombre.trim()) e.nombre = 'Requerido';
     if (!form.cedula.trim()) e.cedula = 'Requerido';
-    else if (CEDULAS_EXISTENTES.includes(form.cedula.trim())) e.cedula_dup = 'Esta cédula ya está registrada.';
     if (!form.email.trim()) e.email = 'Requerido';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(form.email)) e.email = 'Email inválido';
     if (!form.rol) e.rol = 'Selecciona un rol';
     return e;
   }
 
-  function handleGuardar() {
+  async function handleGuardar() {
     const e = validate();
     errors = e;
+    submitError = null;
     if (Object.keys(e).length) return;
-    paso = 'exito';
+
+    try {
+      await $mutation.mutateAsync({
+        nombre: form.nombre.trim(),
+        cedula: form.cedula.trim(),
+        email: form.email.trim(),
+        telefono: form.telefono.trim(),
+        roles: [form.rol as string],
+      });
+      exitoEmail = form.email.trim();
+      paso = 'exito';
+    } catch (err) {
+      submitError = err instanceof Error ? err.message : 'Error al registrar el personal';
+    }
   }
 
   function handleCerrar() {
@@ -75,6 +116,8 @@
       form = { nombre: '', cedula: '', email: '', telefono: '', rol: '' };
       errors = {};
       paso = 'form';
+      submitError = null;
+      exitoEmail = '';
     }, 300);
   }
 </script>
@@ -101,14 +144,22 @@
       <div class="rounded-xl border bg-white p-3 flex items-center gap-3">
         <span class="rounded-lg p-2 bg-emerald-50"><UserCheck class="h-4 w-4 text-emerald-600" /></span>
         <div>
-          <p class="text-xl font-bold text-gray-900">{activos}</p>
+          {#if $staffQuery.isPending}
+            <div class="h-6 w-8 bg-gray-200 rounded animate-pulse mb-1"></div>
+          {:else}
+            <p class="text-xl font-bold text-gray-900">{activos}</p>
+          {/if}
           <p class="text-xs text-gray-500">Activos</p>
         </div>
       </div>
       <div class="rounded-xl border bg-white p-3 flex items-center gap-3">
         <span class="rounded-lg p-2 bg-gray-100"><UserX class="h-4 w-4 text-gray-500" /></span>
         <div>
-          <p class="text-xl font-bold text-gray-900">{inactivos}</p>
+          {#if $staffQuery.isPending}
+            <div class="h-6 w-8 bg-gray-200 rounded animate-pulse mb-1"></div>
+          {:else}
+            <p class="text-xl font-bold text-gray-900">{inactivos}</p>
+          {/if}
           <p class="text-xs text-gray-500">Inactivos</p>
         </div>
       </div>
@@ -126,7 +177,7 @@
         />
       </div>
       <div class="flex gap-2 overflow-x-auto pb-1">
-        {#each (['todos', 'administrador', 'secretario', 'doctor', 'farmaceutico'] as const) as r (r)}
+        {#each (['todos', ...ROLES_DISPONIBLES] as const) as r (r)}
           <button
             type="button"
             onclick={() => { filtroRol = r; }}
@@ -141,19 +192,38 @@
       </div>
     </div>
 
+    <!-- Error state -->
+    {#if $staffQuery.isError}
+      <div class="rounded-xl border border-red-200 bg-red-50 px-4 py-3 flex items-center gap-3">
+        <AlertCircle class="h-4 w-4 text-red-500 shrink-0" />
+        <p class="text-sm text-red-700">No se pudo cargar el personal. Intenta recargar la página.</p>
+      </div>
+    {/if}
+
     <!-- List -->
     <div class="rounded-xl border bg-white divide-y overflow-hidden">
-      {#if personal.length === 0}
+      {#if $staffQuery.isPending}
+        {#each [1, 2, 3] as n (n)}
+          <div class="flex items-center gap-3 px-4 py-3.5">
+            <div class="rounded-full p-2 bg-gray-200 animate-pulse h-8 w-8 shrink-0"></div>
+            <div class="flex-1 flex flex-col gap-1.5">
+              <div class="h-3.5 w-36 bg-gray-200 rounded animate-pulse"></div>
+              <div class="h-3 w-24 bg-gray-100 rounded animate-pulse"></div>
+            </div>
+          </div>
+        {/each}
+      {:else if !$staffQuery.isError && personal.length === 0}
         <p class="px-4 py-8 text-sm text-gray-500 text-center">Sin resultados.</p>
-      {:else}
+      {:else if !$staffQuery.isError}
         {#each personal as p (p.id)}
+          {@const primaryRol = getPrimaryRol(p)}
           <a href={`/admin/staff/${p.id}`} class="flex items-center gap-3 px-4 py-3.5 hover:bg-gray-50 transition-colors">
-            <span class={['rounded-full p-2 shrink-0', ROL_META[p.rol].color].join(' ')}>
-              {#if p.rol === 'administrador'}
+            <span class={['rounded-full p-2 shrink-0', primaryRol ? ROL_META[primaryRol].color : 'bg-gray-100 text-gray-500'].join(' ')}>
+              {#if primaryRol === 'administrador'}
                 <Shield class="h-4 w-4" />
-              {:else if p.rol === 'secretario'}
+              {:else if primaryRol === 'secretario'}
                 <ClipboardList class="h-4 w-4" />
-              {:else if p.rol === 'doctor'}
+              {:else if primaryRol === 'doctor'}
                 <Stethoscope class="h-4 w-4" />
               {:else}
                 <FlaskConical class="h-4 w-4" />
@@ -166,7 +236,7 @@
                   <span class="text-[10px] px-1.5 py-0.5 rounded-full border border-gray-300 text-gray-500 font-medium shrink-0">Inactivo</span>
                 {/if}
               </div>
-              <p class="text-xs text-gray-500 mt-0.5">{ROL_META[p.rol].label} · {p.cedula}</p>
+              <p class="text-xs text-gray-500 mt-0.5">{p.roles.map(r => ROL_META[r.nombre as Rol]?.label ?? r.nombre).join(', ')} · {p.cedula}</p>
             </div>
             <ChevronRight class="h-4 w-4 text-gray-400 shrink-0" />
           </a>
@@ -191,7 +261,7 @@
           <div>
             <p class="font-semibold text-gray-900 text-lg">Personal registrado</p>
             <p class="text-sm text-gray-500 mt-1">
-              Las credenciales iniciales han sido enviadas a <strong>{form.email}</strong>.
+              Las credenciales iniciales han sido enviadas a <strong>{exitoEmail}</strong>.
             </p>
           </div>
           <button type="button" onclick={handleCerrar} class="w-full max-w-xs rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors mt-2">Cerrar</button>
@@ -208,6 +278,13 @@
             </button>
           </div>
 
+          {#if submitError}
+            <div class="mb-4 rounded-lg border border-red-200 bg-red-50 px-3 py-2 flex items-center gap-2">
+              <AlertCircle class="h-4 w-4 text-red-500 shrink-0" />
+              <p class="text-xs text-red-700">{submitError}</p>
+            </div>
+          {/if}
+
           <div class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
               <label for="r-nombre" class="text-xs font-medium text-gray-700">Nombre completo <span class="text-red-500">*</span></label>
@@ -220,7 +297,6 @@
               <input id="r-cedula" type="text" bind:value={form.cedula} placeholder="V-12345678"
                 class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition" />
               {#if errors.cedula}<p class="text-xs text-red-600">{errors.cedula}</p>{/if}
-              {#if errors.cedula_dup}<p class="text-xs text-red-600">{errors.cedula_dup}</p>{/if}
             </div>
             <div class="flex flex-col gap-1.5">
               <label for="r-email" class="text-xs font-medium text-gray-700">Correo electrónico <span class="text-red-500">*</span></label>
@@ -241,7 +317,7 @@
                 <option value="administrador">Administrador</option>
                 <option value="secretario">Secretario</option>
                 <option value="doctor">Doctor</option>
-                <option value="farmaceutico">Farmacéutico</option>
+                <option value="farmaceuta">Farmacéutico</option>
               </select>
               {#if errors.rol}<p class="text-xs text-red-600">{errors.rol}</p>{/if}
             </div>
@@ -249,7 +325,14 @@
 
           <div class="flex gap-2 mt-6">
             <button type="button" onclick={handleCerrar} class="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-medium hover:bg-gray-50 transition-colors">Cancelar</button>
-            <button type="button" onclick={handleGuardar} class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#2D6A4F]/90 transition-colors">Registrar</button>
+            <button
+              type="button"
+              onclick={handleGuardar}
+              disabled={$mutation.isPending}
+              class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#2D6A4F]/90 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+            >
+              {$mutation.isPending ? 'Registrando...' : 'Registrar'}
+            </button>
           </div>
         </div>
       {/if}

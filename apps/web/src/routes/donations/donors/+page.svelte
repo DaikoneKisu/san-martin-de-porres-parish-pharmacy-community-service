@@ -1,41 +1,62 @@
 <script lang="ts">
-  import { ArrowLeft, Search, Plus, User, Building2, Heart, CheckCircle2, X } from 'lucide-svelte';
+  import { ArrowLeft, Search, Plus, Heart, CheckCircle2, X } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
 
-  const DONANTES = [
-    { id: 'd1', tipo: 'persona' as const, nombre: 'María González', identificacion: 'V-12345678', telefono: '0414-1234567', donaciones: 3 },
-    { id: 'd2', tipo: 'institucion' as const, nombre: 'Fundación Salud Bolívar', identificacion: 'J-30987654-0', telefono: '0286-9876543', donaciones: 5 },
-    { id: 'd3', tipo: 'persona' as const, nombre: 'Carlos Martínez', identificacion: 'V-8765432', telefono: '0424-7654321', donaciones: 1 },
-    { id: 'd4', tipo: 'institucion' as const, nombre: 'Iglesia San José', identificacion: 'J-28765432-1', telefono: '0286-1234567', donaciones: 2 },
-  ];
-
-  type TipoFiltro = 'all' | 'persona' | 'institucion';
+  type EsFijoFiltro = 'all' | 'fijo' | 'eventual';
 
   let search = $state('');
-  let tipoFiltro = $state<TipoFiltro>('all');
+  let esFijoFiltro = $state<EsFijoFiltro>('all');
   let drawerOpen = $state(false);
   let guardado = $state(false);
   let guardadoNombre = $state('');
   let form = $state({
-    tipo: 'persona' as 'persona' | 'institucion',
     nombre: '',
-    identificacion: '',
-    telefono: '',
-    correo: '',
-    direccion: ''
+    pais: '',
+    contacto: '',
+    esFijo: false
+  });
+
+  const queryClient = useQueryClient();
+
+  const donorsQuery = createQuery({
+    queryKey: ['donors'],
+    queryFn: async () => {
+      const res = await api.api.donations.donors.get();
+      if (res.error) throw new Error('Error al cargar donantes');
+      return res.data;
+    }
+  });
+
+  const createDonorMutation = createMutation({
+    mutationFn: async (body: { nombre: string; pais: string; contacto: string; esFijo: boolean }) => {
+      const res = await api.api.donations.donors.post(body);
+      if (res.error) throw new Error('Error al registrar donante');
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['donors'] });
+    }
   });
 
   const filtered = $derived(
-    DONANTES
-      .filter(d => tipoFiltro === 'all' || d.tipo === tipoFiltro)
-      .filter(d =>
+    ($donorsQuery.data ?? [])
+      .filter((d: any) => esFijoFiltro === 'all' || (esFijoFiltro === 'fijo' ? d.esFijo : !d.esFijo))
+      .filter((d: any) =>
         d.nombre.toLowerCase().includes(search.toLowerCase()) ||
-        d.identificacion.toLowerCase().includes(search.toLowerCase())
+        d.contacto.toLowerCase().includes(search.toLowerCase())
       )
   );
 
-  function handleGuardar() {
-    if (!form.nombre || !form.identificacion) return;
+  async function handleGuardar() {
+    if (!form.nombre || !form.pais || !form.contacto) return;
+    await $createDonorMutation.mutateAsync({
+      nombre: form.nombre,
+      pais: form.pais,
+      contacto: form.contacto,
+      esFijo: form.esFijo
+    });
     guardadoNombre = form.nombre;
     guardado = true;
   }
@@ -45,7 +66,7 @@
     setTimeout(() => {
       guardado = false;
       guardadoNombre = '';
-      form = { tipo: 'persona', nombre: '', identificacion: '', telefono: '', correo: '', direccion: '' };
+      form = { nombre: '', pais: '', contacto: '', esFijo: false };
     }, 300);
   }
 </script>
@@ -72,7 +93,7 @@
     <Search class="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground pointer-events-none" />
     <input
       type="search"
-      placeholder="Buscar por nombre o identificación..."
+      placeholder="Buscar por nombre o contacto..."
       bind:value={search}
       class="w-full rounded-lg border bg-background py-2 pl-9 pr-4 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
     />
@@ -80,11 +101,11 @@
 
   <!-- Filter chips -->
   <div class="flex gap-2 flex-wrap">
-    {#each ([['all', 'Todos'], ['persona', 'Personas'], ['institucion', 'Instituciones']] as const) as [val, label]}
+    {#each ([['all', 'Todos'], ['fijo', 'Fijos'], ['eventual', 'Eventuales']] as const) as [val, label] (val)}
       <button
-        onclick={() => (tipoFiltro = val)}
+        onclick={() => (esFijoFiltro = val)}
         class="rounded-full px-3 py-1 text-xs font-medium border transition-colors
-          {tipoFiltro === val
+          {esFijoFiltro === val
             ? 'bg-primary text-primary-foreground border-primary'
             : 'bg-background text-muted-foreground border-border hover:border-primary/50'}"
       >
@@ -93,38 +114,66 @@
     {/each}
   </div>
 
-  <!-- Counter -->
-  <p class="text-xs text-muted-foreground">{filtered.length} donante(s)</p>
-
-  <!-- List -->
-  {#if filtered.length === 0}
-    <div class="flex flex-col items-center gap-3 py-16 text-center">
-      <Heart class="h-10 w-10 text-muted-foreground/40" />
-      <p class="text-sm text-muted-foreground">Sin donantes registrados</p>
-    </div>
-  {:else}
+  <!-- Loading skeletons -->
+  {#if $donorsQuery.isPending}
     <ul class="space-y-2">
-      {#each filtered as donante (donante.id)}
-        <li class="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
-          <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-muted">
-            {#if donante.tipo === 'persona'}
-              <User class="h-4 w-4 text-muted-foreground" />
-            {:else}
-              <Building2 class="h-4 w-4 text-muted-foreground" />
-            {/if}
-          </span>
-          <div class="flex-1 min-w-0">
-            <p class="font-medium text-sm truncate">{donante.nombre}</p>
-            <p class="text-xs text-muted-foreground mt-0.5">
-              {donante.identificacion} · {donante.telefono}
-            </p>
+      {#each [1, 2, 3] as n (n)}
+        <li class="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm animate-pulse">
+          <span class="mt-0.5 h-9 w-9 shrink-0 rounded-full bg-muted"></span>
+          <div class="flex-1 space-y-2">
+            <div class="h-3.5 w-1/2 rounded bg-muted"></div>
+            <div class="h-3 w-2/3 rounded bg-muted"></div>
           </div>
-          <span class="shrink-0 rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground font-medium">
-            {donante.donaciones} donación(es)
-          </span>
+          <div class="h-6 w-16 rounded-full bg-muted shrink-0"></div>
         </li>
       {/each}
     </ul>
+
+  <!-- Error state -->
+  {:else if $donorsQuery.isError}
+    <div class="flex flex-col items-center gap-3 py-16 text-center">
+      <X class="h-10 w-10 text-destructive/50" />
+      <p class="text-sm text-muted-foreground">Error al cargar los donantes. Intente de nuevo.</p>
+    </div>
+
+  {:else}
+    <!-- Counter -->
+    <p class="text-xs text-muted-foreground">{filtered.length} donante(s)</p>
+
+    <!-- List -->
+    {#if filtered.length === 0}
+      <div class="flex flex-col items-center gap-3 py-16 text-center">
+        <Heart class="h-10 w-10 text-muted-foreground/40" />
+        <p class="text-sm text-muted-foreground">Sin donantes registrados</p>
+      </div>
+    {:else}
+      <ul class="space-y-2">
+        {#each filtered as donante (donante.id)}
+          <li class="flex items-start gap-3 rounded-xl border bg-card p-4 shadow-sm">
+            <span class="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-primary/10">
+              <Heart class="h-4 w-4 text-primary" />
+            </span>
+            <div class="flex-1 min-w-0">
+              <p class="font-medium text-sm truncate">{donante.nombre}</p>
+              <p class="text-xs text-muted-foreground mt-0.5">
+                {donante.pais} · {donante.contacto}
+              </p>
+            </div>
+            <div class="flex flex-col items-end gap-1 shrink-0">
+              <span class="rounded-full px-2.5 py-1 text-xs font-medium
+                {donante.esFijo
+                  ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950 dark:text-emerald-400'
+                  : 'bg-muted text-muted-foreground'}">
+                {donante.esFijo ? 'Fijo' : 'Eventual'}
+              </span>
+              <span class="text-xs text-muted-foreground">
+                {donante.donaciones.length} donación(es)
+              </span>
+            </div>
+          </li>
+        {/each}
+      </ul>
+    {/if}
   {/if}
 </main>
 
@@ -150,30 +199,6 @@
             </button>
           </div>
 
-          <!-- Selector tipo -->
-          <div class="mb-4 grid grid-cols-2 gap-2">
-            <button
-              onclick={() => (form.tipo = 'persona')}
-              class="flex items-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-medium transition-colors
-                {form.tipo === 'persona'
-                  ? 'border-primary bg-primary/5 text-primary'
-                  : 'border-border text-muted-foreground hover:border-primary/40'}"
-            >
-              <User class="h-4 w-4 shrink-0" />
-              Persona
-            </button>
-            <button
-              onclick={() => (form.tipo = 'institucion')}
-              class="flex items-center gap-2 rounded-xl border-2 px-3 py-3 text-sm font-medium transition-colors
-                {form.tipo === 'institucion'
-                  ? 'border-primary bg-primary/5 text-primary'
-                  : 'border-border text-muted-foreground hover:border-primary/40'}"
-            >
-              <Building2 class="h-4 w-4 shrink-0" />
-              Institución
-            </button>
-          </div>
-
           <!-- Campos -->
           <div class="space-y-3">
             <div class="space-y-1">
@@ -184,58 +209,45 @@
                 id="nombre"
                 type="text"
                 bind:value={form.nombre}
-                placeholder={form.tipo === 'persona' ? 'Nombre completo' : 'Nombre de la institución'}
+                placeholder="Nombre completo o institución"
                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
             <div class="space-y-1">
-              <label for="identificacion" class="text-xs font-medium text-foreground">
-                {form.tipo === 'persona' ? 'Cédula' : 'RIF'} <span class="text-destructive">*</span>
+              <label for="pais" class="text-xs font-medium text-foreground">
+                País <span class="text-destructive">*</span>
               </label>
               <input
-                id="identificacion"
+                id="pais"
                 type="text"
-                bind:value={form.identificacion}
-                placeholder={form.tipo === 'persona' ? 'V-12345678' : 'J-12345678-0'}
+                bind:value={form.pais}
+                placeholder="Venezuela"
                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
 
             <div class="space-y-1">
-              <label for="telefono" class="text-xs font-medium text-foreground">
-                Teléfono <span class="text-destructive">*</span>
+              <label for="contacto" class="text-xs font-medium text-foreground">
+                Contacto <span class="text-destructive">*</span>
               </label>
               <input
-                id="telefono"
-                type="tel"
-                bind:value={form.telefono}
-                placeholder="0414-1234567"
-                class="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-
-            <div class="space-y-1">
-              <label for="correo" class="text-xs font-medium text-foreground">Correo electrónico</label>
-              <input
-                id="correo"
-                type="email"
-                bind:value={form.correo}
-                placeholder="correo@ejemplo.com"
-                class="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
-              />
-            </div>
-
-            <div class="space-y-1">
-              <label for="direccion" class="text-xs font-medium text-foreground">Dirección</label>
-              <input
-                id="direccion"
+                id="contacto"
                 type="text"
-                bind:value={form.direccion}
-                placeholder="Dirección completa"
+                bind:value={form.contacto}
+                placeholder="Teléfono o correo electrónico"
                 class="w-full rounded-lg border bg-background px-3 py-2 text-sm placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/30"
               />
             </div>
+
+            <label class="flex items-center gap-3 cursor-pointer rounded-xl border px-3 py-3 hover:bg-muted/50 transition-colors">
+              <input
+                type="checkbox"
+                bind:checked={form.esFijo}
+                class="h-4 w-4 rounded border-border accent-primary"
+              />
+              <span class="text-sm font-medium">¿Es donante fijo?</span>
+            </label>
           </div>
 
           <!-- Botones -->
@@ -248,12 +260,18 @@
             </button>
             <button
               onclick={handleGuardar}
-              disabled={!form.nombre || !form.identificacion}
+              disabled={!form.nombre || !form.pais || !form.contacto || $createDonorMutation.isPending}
               class="flex-1 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground shadow-sm hover:bg-primary/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             >
-              Registrar
+              {$createDonorMutation.isPending ? 'Registrando...' : 'Registrar'}
             </button>
           </div>
+
+          {#if $createDonorMutation.isError}
+            <p class="mt-3 text-center text-xs text-destructive">
+              Error al registrar donante. Intente de nuevo.
+            </p>
+          {/if}
 
         {:else}
           <!-- Estado éxito -->

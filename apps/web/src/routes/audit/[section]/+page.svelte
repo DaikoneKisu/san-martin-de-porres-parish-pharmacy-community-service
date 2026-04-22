@@ -1,6 +1,8 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { ArrowLeft, Search, User2, CalendarDays, Clock, FileText, ChevronRight, X } from 'lucide-svelte';
+  import { createQuery } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
+  import { ArrowLeft, User2, CalendarDays, Clock, FileText, ChevronRight, X, ChevronLeft } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
 
   // ── Types ──────────────────────────────────────────────────────────────
@@ -65,46 +67,81 @@
     acceso:            { label: 'Acceso',          cls: 'bg-slate-50 text-slate-700 border-slate-200' },
   };
 
-  // ── Mock data generator ────────────────────────────────────────────────
-  function generarMock(tipo: TipoAuditoria): RegistroAuditoria[] {
-    const cfg = CONFIG[tipo];
-    const actores = ['Dr. Carlos Rodríguez', 'Lcda. María González', 'Admin Principal', null];
-    const entidadesMap: Record<TipoAuditoria, string[]> = {
-      'pacientes':          ['Juan Pérez (C-18.345.210)', 'Ana Martínez (C-22.100.456)', 'Pedro López (C-15.876.321)'],
-      'antecedentes':       ['Hipertensión — Juan Pérez', 'Diabetes T2 — Ana Martínez', 'Asma — Pedro López'],
-      'citas':              ['Cita #C-0045 · Dr. Rodríguez', 'Cita #C-0046 · Dr. Flores', 'Cita #C-0047 · Dr. Rodríguez'],
-      'insumos':            ['Amoxicilina 500mg (LT-2024-001)', 'Ibuprofeno 400mg (LT-2024-002)', 'Guantes nitrilo M'],
-      'donantes':           ['Farmacia Central C.A.', 'Cruz Roja Venezolana', 'Familia Pérez Hernández'],
-      'donaciones':         ['DON-2025-0012 · Farmacia Central', 'DON-2025-0013 · Cruz Roja', 'DON-2025-0014 · Familia Pérez'],
-      'asientos':           ['ASI-2025-0041 · Ingreso cita #C-0045', 'ASI-2025-0042 · Egreso insumos', 'ASI-2025-0043 · Donación'],
-      'recipes-externos':   ['REC-EXT-0021 · Juan Pérez', 'REC-EXT-0022 · Ana Martínez', 'REC-EXT-0023 · Pedro López'],
-      'accesos-contables':  ['libro_diario', 'estado_resultados', 'libro_diario'],
-    };
+  // ── API endpoint map ───────────────────────────────────────────────────
+  const PAGE_SIZE = 20;
 
-    const lista = entidadesMap[tipo];
-    const rows: RegistroAuditoria[] = [];
-    const now = Date.now();
-
-    for (let i = 0; i < 18; i++) {
-      const accion = cfg.acciones[i % cfg.acciones.length];
-      const esEdicion = accion === 'edicion' || accion === 'edicion_resultado';
-      const entidad = lista[i % lista.length];
-      const actor = actores[i % actores.length];
-      const msAtras = i * 4_800_000 + (i * 1_234_567 % 3_600_000);
-
-      rows.push({
-        id: `aud-${tipo}-${i + 1}`,
-        fecha: new Date(now - msAtras).toISOString(),
-        accion,
-        entidad: cfg.esAcceso ? '' : entidad,
-        actor,
-        tipoConsulta: cfg.esAcceso ? entidad : undefined,
-        parametros: cfg.esAcceso ? { desde: '2025-01-01', hasta: '2025-06-30' } : null,
-        datosAnteriores: esEdicion && !cfg.soloRegistro ? { nombre: 'Valor anterior', stock: 45, estado: 'activo' } : null,
-        datosNuevos: cfg.esAcceso ? null : { nombre: 'Valor nuevo', stock: 40, estado: 'activo' },
-      });
+  function fetchAudit(section: string, queryParams: Record<string, unknown>) {
+    switch (section) {
+      case 'patients':          return api.api.audit.patients.get({ query: queryParams });
+      case 'antecedents':       return api.api.audit.antecedents.get({ query: queryParams });
+      case 'appointments':      return api.api.audit.appointments.get({ query: queryParams });
+      case 'supplies':          return api.api.audit.supplies.get({ query: queryParams });
+      case 'donors':            return api.api.audit.donors.get({ query: queryParams });
+      case 'donations':         return api.api.audit.donations.get({ query: queryParams });
+      case 'journal-entries':   return api.api.audit['accounting-entries'].get({ query: queryParams });
+      case 'external-recipes':  return api.api.audit['external-recipes'].get({ query: queryParams });
+      case 'accounting-access': return api.api.audit['accounting-access'].get({ query: queryParams });
+      default:                  return api.api.audit.patients.get({ query: queryParams });
     }
-    return rows;
+  }
+
+  // ── Entity label helpers ───────────────────────────────────────────────
+  function getEntidadLabel(sec: string, item: any): string {
+    switch (sec) {
+      case 'patients':          return item.paciente ? `${item.paciente.nombre} (${item.paciente.cedula})` : '—';
+      case 'antecedents':       return item.antecedente ? item.antecedente.descripcion.substring(0, 60) : '—';
+      case 'appointments':      return item.cita ? `Cita · ${item.cita.paciente?.nombre ?? ''}` : '—';
+      case 'supplies':          return item.insumo ? `${item.insumo.tipo} · Lote ${item.insumo.numeroLote}` : '—';
+      case 'donors':            return item.donante ? item.donante.nombre : '—';
+      case 'donations':         return item.donacion ? `Donación · ${item.donacion.donante?.nombre ?? ''}` : '—';
+      case 'journal-entries':   return item.asiento ? item.asiento.concepto : '—';
+      case 'external-recipes':  return item.recipe ? `Récipe externo #${item.recipe.id.substring(0, 8)}` : '—';
+      case 'accounting-access': return item.tipoConsulta ?? '—';
+      default:                  return '—';
+    }
+  }
+
+  function getActorLabel(item: any): string {
+    const actor = item.actor ?? item.personal ?? null;
+    return actor ? actor.nombre : 'Sistema';
+  }
+
+  function mapItem(sec: string, item: any): RegistroAuditoria {
+    const accion = (item.accion ?? item.tipoConsulta ?? 'acceso') as Accion;
+    const entidad = getEntidadLabel(sec, item);
+    const actor = getActorLabel(item);
+
+    let datosAnteriores: Record<string, unknown> | null = null;
+    let datosNuevos: Record<string, unknown> | null = null;
+    let parametros: Record<string, unknown> | null = null;
+
+    try {
+      datosAnteriores = item.datosAnteriores ? JSON.parse(item.datosAnteriores) : null;
+    } catch {
+      datosAnteriores = item.datosAnteriores ?? null;
+    }
+    try {
+      datosNuevos = item.datosNuevos ? JSON.parse(item.datosNuevos) : null;
+    } catch {
+      datosNuevos = item.datosNuevos ?? null;
+    }
+    try {
+      parametros = item.parametros ? JSON.parse(item.parametros) : null;
+    } catch {
+      parametros = item.parametros ?? null;
+    }
+
+    return {
+      id: item.id,
+      fecha: item.auditoria?.fecha ?? new Date().toISOString(),
+      accion,
+      entidad,
+      actor,
+      datosAnteriores,
+      datosNuevos,
+      tipoConsulta: item.tipoConsulta ?? undefined,
+      parametros,
+    };
   }
 
   // ── Helpers ────────────────────────────────────────────────────────────
@@ -119,24 +156,51 @@
   const section = $derived(page.params.section ?? '');
   const tipo = $derived((SECTION_MAP[section] ?? 'pacientes') as TipoAuditoria);
   const cfg = $derived(CONFIG[tipo]);
-  const registros = $derived(generarMock(tipo));
 
-  let search = $state('');
+  // Track which section the current page number belongs to; reset to 1 when section changes
+  let _pageSection = $state('');
+  let _currentPage = $state(1);
+  const currentPage = $derived.by(() => {
+    if (_pageSection !== section) {
+      _pageSection = section;
+      _currentPage = 1;
+    }
+    return _currentPage;
+  });
+
   let accionFiltro = $state('all');
   let detalle = $state<RegistroAuditoria | null>(null);
   let detalleDrawerOpen = $state(false);
 
-  const filtered = $derived(
-    registros.filter(r => {
-      const q = search.trim().toLowerCase();
-      const matchSearch = !q ||
-        r.entidad.toLowerCase().includes(q) ||
-        (r.actor ?? 'sistema').toLowerCase().includes(q) ||
-        (r.tipoConsulta ?? '').toLowerCase().includes(q);
-      const matchAccion = accionFiltro === 'all' || r.accion === accionFiltro;
-      return matchSearch && matchAccion;
+  // ── Query ──────────────────────────────────────────────────────────────
+  const auditQuery = $derived(
+    createQuery({
+      queryKey: ['audit', section, currentPage, accionFiltro] as const,
+      queryFn: async () => {
+        const params: Record<string, unknown> = {
+          page: currentPage,
+          pageSize: PAGE_SIZE,
+        };
+        if (accionFiltro !== 'all') {
+          params.accion = accionFiltro;
+        }
+        const res = await fetchAudit(section, params);
+        if (res.error) throw res.error;
+        return res.data as { total: number; page: number; pageSize: number; items: any[] };
+      },
+      enabled: !!section,
     })
   );
+
+  // ── Derived display data ───────────────────────────────────────────────
+  const registros = $derived(
+    ($auditQuery.data?.items ?? []).map((item: any) => mapItem(section, item))
+  );
+
+  const totalItems = $derived($auditQuery.data?.total ?? 0);
+  const totalPages = $derived(Math.max(1, Math.ceil(totalItems / PAGE_SIZE)));
+  const rangeStart = $derived(totalItems === 0 ? 0 : (currentPage - 1) * PAGE_SIZE + 1);
+  const rangeEnd = $derived(Math.min(currentPage * PAGE_SIZE, totalItems));
 
   function abrirDetalle(r: RegistroAuditoria) {
     detalle = r;
@@ -153,22 +217,11 @@
   </header>
 
   <main class="flex-1 px-4 pt-3 pb-8 max-w-2xl mx-auto w-full flex flex-col gap-3">
-    <!-- Search -->
-    <div class="relative">
-      <Search class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 pointer-events-none" />
-      <input
-        type="search"
-        placeholder={cfg.esAcceso ? 'Buscar por tipo de consulta o actor...' : 'Buscar por entidad o actor...'}
-        bind:value={search}
-        class="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30 focus:border-[#2D6A4F] transition"
-      />
-    </div>
-
     <!-- Action chips -->
     <div class="flex gap-2 flex-wrap">
       <button
         type="button"
-        onclick={() => { accionFiltro = 'all'; }}
+        onclick={() => { accionFiltro = 'all'; _currentPage = 1; }}
         class={[
           'rounded-full px-3 py-1 text-xs font-medium border transition-colors',
           accionFiltro === 'all' ? 'bg-[#2D6A4F] text-white border-[#2D6A4F]' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50',
@@ -179,7 +232,7 @@
       {#each cfg.acciones as accion (accion)}
         <button
           type="button"
-          onclick={() => { accionFiltro = accionFiltro === accion ? 'all' : accion; }}
+          onclick={() => { accionFiltro = accionFiltro === accion ? 'all' : accion; _currentPage = 1; }}
           class={[
             'rounded-full px-3 py-1 text-xs font-medium border transition-colors',
             accionFiltro === accion ? 'bg-[#2D6A4F] text-white border-[#2D6A4F]' : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50',
@@ -190,19 +243,45 @@
       {/each}
     </div>
 
-    <!-- Counter -->
-    <p class="text-xs text-gray-500">{filtered.length} registro{filtered.length !== 1 ? 's' : ''}</p>
+    <!-- Error state -->
+    {#if $auditQuery.isError}
+      <div class="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
+        Error al cargar los registros de auditoría. Intenta de nuevo.
+      </div>
+    {/if}
 
-    <!-- List -->
-    {#if filtered.length === 0}
+    <!-- Loading skeletons -->
+    {#if $auditQuery.isPending}
+      <ul class="flex flex-col gap-2">
+        {#each { length: 5 } as _, i (i)}
+          <li class="rounded-xl border border-gray-200 bg-white p-4 flex items-start gap-3 animate-pulse">
+            <div class="flex-1 flex flex-col gap-2">
+              <div class="h-4 w-2/3 rounded bg-gray-200"></div>
+              <div class="h-3 w-1/3 rounded bg-gray-100"></div>
+              <div class="flex gap-2 mt-1">
+                <div class="h-5 w-16 rounded-full bg-gray-200"></div>
+                <div class="h-5 w-24 rounded bg-gray-100"></div>
+              </div>
+            </div>
+          </li>
+        {/each}
+      </ul>
+
+    <!-- Empty state -->
+    {:else if registros.length === 0}
       <div class="flex flex-col items-center justify-center py-16 gap-2 text-center">
         <FileText class="h-10 w-10 text-gray-300" />
         <p class="text-sm text-gray-500">Sin registros</p>
-        <p class="text-xs text-gray-400">Ajusta el término de búsqueda o los filtros.</p>
+        <p class="text-xs text-gray-400">No hay entradas para el filtro seleccionado.</p>
       </div>
+
+    <!-- List -->
     {:else}
+      <!-- Counter -->
+      <p class="text-xs text-gray-500">{totalItems} registro{totalItems !== 1 ? 's' : ''}</p>
+
       <ul class="flex flex-col gap-2">
-        {#each filtered as r (r.id)}
+        {#each registros as r (r.id)}
           <li>
             <button
               type="button"
@@ -227,8 +306,8 @@
                   <ChevronRight class="h-4 w-4 text-gray-400 shrink-0 mt-0.5" />
                 </div>
                 <div class="flex items-center gap-2 mt-2 flex-wrap">
-                  <span class={['text-xs px-2 py-0.5 rounded-full border font-medium', ACCION_META[r.accion].cls].join(' ')}>
-                    {ACCION_META[r.accion].label}
+                  <span class={['text-xs px-2 py-0.5 rounded-full border font-medium', ACCION_META[r.accion]?.cls ?? 'bg-gray-50 text-gray-700 border-gray-200'].join(' ')}>
+                    {ACCION_META[r.accion]?.label ?? r.accion}
                   </span>
                   <span class="text-xs text-gray-500 flex items-center gap-1">
                     <CalendarDays class="h-3 w-3" />
@@ -244,6 +323,33 @@
           </li>
         {/each}
       </ul>
+
+      <!-- Pagination -->
+      {#if totalPages > 1}
+        <div class="flex items-center justify-between pt-1 text-xs text-gray-500">
+          <span>Mostrando {rangeStart}–{rangeEnd} de {totalItems}</span>
+          <div class="flex items-center gap-1">
+            <button
+              type="button"
+              onclick={() => { _currentPage = Math.max(1, currentPage - 1); }}
+              disabled={currentPage <= 1}
+              class="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <ChevronLeft class="h-3 w-3" />
+              Anterior
+            </button>
+            <button
+              type="button"
+              onclick={() => { _currentPage = Math.min(totalPages, currentPage + 1); }}
+              disabled={currentPage >= totalPages}
+              class="flex items-center gap-1 rounded-md border border-gray-300 bg-white px-2 py-1 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              Siguiente
+              <ChevronRight class="h-3 w-3" />
+            </button>
+          </div>
+        </div>
+      {/if}
     {/if}
   </main>
 </div>
@@ -287,8 +393,8 @@
         <div class="flex-1 overflow-y-auto px-4 pt-3 pb-8 flex flex-col gap-4">
           <div class="flex items-center gap-2">
             <p class="text-sm font-medium text-gray-900">Acción:</p>
-            <span class={['text-xs px-2 py-0.5 rounded-full border font-medium', ACCION_META[detalle.accion].cls].join(' ')}>
-              {ACCION_META[detalle.accion].label}
+            <span class={['text-xs px-2 py-0.5 rounded-full border font-medium', ACCION_META[detalle.accion]?.cls ?? 'bg-gray-50 text-gray-700 border-gray-200'].join(' ')}>
+              {ACCION_META[detalle.accion]?.label ?? detalle.accion}
             </span>
           </div>
 

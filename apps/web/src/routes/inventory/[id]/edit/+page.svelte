@@ -1,47 +1,87 @@
 <script lang="ts">
   import { page } from '$app/state';
-  import { untrack } from 'svelte';
+  import { api } from '$lib/api';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
   import { ArrowLeft, CheckCircle2 } from 'lucide-svelte';
 
-  const INSUMOS = [
-    { id: 'inv1', tipo: 'medicamento', nombre: 'Paracetamol 500mg', presentacion: 'Caja x 20 tab', stockDisponible: 8, cantidadInicial: 15, fechaVencimiento: '2026-06-30', lote: 'L2025-01', precioRef: 80, stockMinimo: 3, categoria: 'Analgésico', principioActivo: 'Paracetamol', laboratorio: 'Lab. Nacional', formaFarmaceutica: 'Tableta', empaque: 'Caja', observaciones: '' },
-    { id: 'inv2', tipo: 'medicamento', nombre: 'Ibuprofeno 400mg', presentacion: 'Caja x 10 tab', stockDisponible: 2, cantidadInicial: 10, fechaVencimiento: '2026-09-15', lote: 'L2025-02', precioRef: 75, stockMinimo: 3, categoria: 'Antiinflamatorio', principioActivo: 'Ibuprofeno', laboratorio: 'Farma Bolívar', formaFarmaceutica: 'Tableta', empaque: 'Caja', observaciones: 'Usar con comida' },
-    { id: 'inv3', tipo: 'medicamento', nombre: 'Amoxicilina 500mg', presentacion: 'Caja x 12 cap', stockDisponible: 0, cantidadInicial: 5, fechaVencimiento: '2026-03-01', lote: 'L2025-03', precioRef: 120, stockMinimo: 2, categoria: 'Antibiótico', principioActivo: 'Amoxicilina', laboratorio: 'BioFarma', formaFarmaceutica: 'Cápsula', empaque: 'Caja', observaciones: '' },
-    { id: 'inv4', tipo: 'material', nombre: 'Guantes de látex', presentacion: 'Caja x 100 uds', stockDisponible: 4, cantidadInicial: 10, fechaVencimiento: '2027-01-01', lote: 'L2025-04', precioRef: 300, stockMinimo: 2, categoria: 'Protección', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-    { id: 'inv5', tipo: 'medicamento', nombre: 'Vitamina C 500mg', presentacion: 'Frasco x 30 comp', stockDisponible: 9, cantidadInicial: 9, fechaVencimiento: '2026-12-31', lote: 'L2025-05', precioRef: 60, stockMinimo: 3, categoria: 'Vitaminas', principioActivo: 'Ácido ascórbico', laboratorio: 'Vitapharma', formaFarmaceutica: 'Comprimido', empaque: 'Frasco', observaciones: '' },
-    { id: 'inv6', tipo: 'material', nombre: 'Gasas estériles', presentacion: 'Caja x 50 uds', stockDisponible: 1, cantidadInicial: 8, fechaVencimiento: '2027-06-30', lote: 'L2025-06', precioRef: 150, stockMinimo: 2, categoria: 'Curaciones', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-    { id: 'inv7', tipo: 'material', nombre: 'Jeringas 5ml', presentacion: 'Caja x 100 uds', stockDisponible: 6, cantidadInicial: 6, fechaVencimiento: '2028-01-01', lote: 'L2025-07', precioRef: 190, stockMinimo: 2, categoria: 'Inyectables', principioActivo: '', laboratorio: '', formaFarmaceutica: '', empaque: 'Caja', observaciones: '' },
-  ];
+  const queryClient = useQueryClient();
 
-  const insumo = $derived(INSUMOS.find(i => i.id === page.params.id));
-
-  // Initialize form state directly from insumo using untrack so the user's edits
-  // are not overwritten on reactive re-runs triggered by page.params.id changes.
-  let form = $state(
-    untrack(() => {
-      const found = INSUMOS.find(i => i.id === page.params.id);
-      return {
-        nombre: found?.nombre ?? '',
-        presentacion: found?.presentacion ?? '',
-        lote: found?.lote ?? '',
-        vencimiento: found?.fechaVencimiento ?? '',
-        stockMinimo: found?.stockMinimo ?? 0,
-        precioRef: found?.precioRef ?? 0,
-        categoria: found?.categoria ?? '',
-        principioActivo: found?.principioActivo ?? '',
-        laboratorio: found?.laboratorio ?? '',
-        formaFarmaceutica: found?.formaFarmaceutica ?? '',
-        empaque: found?.empaque ?? '',
-        observaciones: found?.observaciones ?? ''
+  const supplyQuery = createQuery({
+    get queryKey() { return ['supply', page.params.id]; },
+    get queryFn() {
+      const id: string = page.params.id ?? '';
+      return async () => {
+        const res = await api.api.inventory.supplies({ id }).get();
+        if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al cargar insumo');
+        return res.data as any;
       };
-    })
-  );
+    },
+    get enabled() { return !!page.params.id; },
+  });
 
-  let guardado = $state(false);
+  // User overrides: undefined means "use the value from the query"
+  let overrides = $state<{
+    numeroLote?: string;
+    fechaVencimiento?: string;
+    cantidad?: number;
+    precioUnitarioReferencial?: number;
+  }>({});
+
+  // Form values are derived from query data, overridden by user edits
+  const form = $derived({
+    numeroLote: overrides.numeroLote ?? ($supplyQuery.data?.numeroLote ?? ''),
+    fechaVencimiento: overrides.fechaVencimiento ?? (
+      $supplyQuery.data?.fechaVencimiento
+        ? ($supplyQuery.data.fechaVencimiento as string).slice(0, 10)
+        : ''
+    ),
+    cantidad: overrides.cantidad ?? ($supplyQuery.data?.cantidad ?? 0),
+    precioUnitarioReferencial: overrides.precioUnitarioReferencial ?? ($supplyQuery.data?.precioUnitarioReferencial ?? 0),
+  });
+
+  const editMutation = createMutation({
+    mutationFn: async (body: {
+      numeroLote?: string;
+      fechaVencimiento?: string;
+      cantidad?: number;
+      precioUnitarioReferencial?: number;
+    }) => {
+      const id: string = page.params.id ?? '';
+      const res = await api.api.inventory.supplies({ id }).patch(body);
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al guardar cambios');
+      return res.data!;
+    },
+    onSuccess: () => {
+      const id = page.params.id;
+      queryClient.invalidateQueries({ queryKey: ['supply', id] });
+      queryClient.invalidateQueries({ queryKey: ['supplies'] });
+    },
+  });
+
+  function getSupplyName(data: typeof $supplyQuery.data): string {
+    if (!data) return '';
+    if (data.presentacionMedicamento) {
+      const pm = data.presentacionMedicamento as {
+        medicamento?: { marca?: { nombre?: string }; nombre?: string };
+        nombre?: string;
+      };
+      return pm.medicamento?.marca?.nombre ?? pm.medicamento?.nombre ?? pm.nombre ?? data.id;
+    }
+    if (data.materialQuirurgico) {
+      const mq = data.materialQuirurgico as { nombre?: string };
+      return mq.nombre ?? data.id;
+    }
+    return data.id;
+  }
 
   function handleSubmit(e: Event) {
     e.preventDefault();
-    guardado = true;
+    $editMutation.mutate({
+      numeroLote: form.numeroLote || undefined,
+      fechaVencimiento: form.fechaVencimiento || undefined,
+      cantidad: form.cantidad,
+      precioUnitarioReferencial: form.precioUnitarioReferencial,
+    });
   }
 
   const inputClass =
@@ -61,15 +101,28 @@
 
   <!-- Main content -->
   <main class="flex-1 px-4 py-4 pb-24 max-w-2xl mx-auto w-full">
-    {#if !insumo}
-      <!-- Not found state -->
+    {#if $supplyQuery.isPending}
+      <!-- Loading skeleton -->
+      <div class="space-y-4">
+        {#each [1, 2] as _item (_item)}
+          <div class="rounded-xl border bg-white p-4 space-y-4 animate-pulse">
+            <div class="h-4 bg-gray-200 rounded w-1/3"></div>
+            <div class="h-9 bg-gray-200 rounded"></div>
+            <div class="h-9 bg-gray-200 rounded"></div>
+          </div>
+        {/each}
+      </div>
+    {:else if $supplyQuery.isError}
+      <!-- Error state -->
       <div class="flex flex-col items-center justify-center py-16 gap-4">
-        <p class="text-sm text-muted-foreground">Insumo no encontrado.</p>
+        <p class="text-sm text-destructive text-center">
+          {$supplyQuery.error?.message ?? 'Error al cargar el insumo.'}
+        </p>
         <a href="/inventory" class="text-sm font-medium text-primary hover:underline">
           Volver al inventario
         </a>
       </div>
-    {:else if guardado}
+    {:else if $editMutation.isSuccess}
       <!-- Success state -->
       <div class="flex flex-col items-center justify-center py-16 gap-4">
         <CheckCircle2 size={48} class="text-emerald-500" />
@@ -83,176 +136,100 @@
       </div>
     {:else}
       <form id="edit-form" onsubmit={handleSubmit} class="space-y-4">
-        <!-- Section 1: Identificación -->
-        <section class="rounded-xl border bg-white p-4 space-y-4">
+        <!-- Section 1: Identificación (read-only) -->
+        <section class="rounded-xl border bg-white p-4 space-y-3">
           <p class={sectionLabelClass}>Identificación</p>
 
-          <div class="space-y-1">
-            <label for="nombre" class={labelClass}>Nombre *</label>
-            <input
-              id="nombre"
-              type="text"
-              bind:value={form.nombre}
-              class={inputClass}
-              required
-            />
+          <div class="flex items-center gap-3">
+            <span class="text-sm text-muted-foreground font-mono">{$supplyQuery.data?.id}</span>
+            <span
+              class="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium
+                {$supplyQuery.data?.tipo === 'MEDICAMENTO'
+                  ? 'bg-blue-100 text-blue-700'
+                  : 'bg-amber-100 text-amber-700'}"
+            >
+              {$supplyQuery.data?.tipo}
+            </span>
           </div>
 
-          <div class="space-y-1">
-            <label for="presentacion" class={labelClass}>Presentación *</label>
-            <input
-              id="presentacion"
-              type="text"
-              bind:value={form.presentacion}
-              placeholder="Caja x 20 tab"
-              class={inputClass}
-              required
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label for="lote" class={labelClass}>Lote</label>
-            <input
-              id="lote"
-              type="text"
-              bind:value={form.lote}
-              class={inputClass}
-            />
-          </div>
-
-          <div class="space-y-1">
-            <label for="vencimiento" class={labelClass}>Vencimiento</label>
-            <input
-              id="vencimiento"
-              type="date"
-              bind:value={form.vencimiento}
-              class={inputClass}
-            />
+          <div>
+            <p class="text-xs text-muted-foreground">Nombre</p>
+            <p class="text-sm font-medium text-foreground">{getSupplyName($supplyQuery.data)}</p>
           </div>
         </section>
 
-        <!-- Section 2: Stock y precio -->
+        <!-- Section 2: Datos editables -->
         <section class="rounded-xl border bg-white p-4 space-y-4">
-          <p class={sectionLabelClass}>Stock y precio</p>
+          <p class={sectionLabelClass}>Datos editables</p>
 
           <div class="space-y-1">
-            <label for="stockMinimo" class={labelClass}>Stock mínimo</label>
+            <label for="numeroLote" class={labelClass}>Número de lote *</label>
             <input
-              id="stockMinimo"
-              type="number"
-              min="0"
-              bind:value={form.stockMinimo}
+              id="numeroLote"
+              type="text"
+              value={form.numeroLote}
+              oninput={(e) => { overrides.numeroLote = (e.currentTarget as HTMLInputElement).value; }}
+              class={inputClass}
+              required
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label for="fechaVencimiento" class={labelClass}>Fecha de vencimiento</label>
+            <input
+              id="fechaVencimiento"
+              type="date"
+              value={form.fechaVencimiento}
+              oninput={(e) => { overrides.fechaVencimiento = (e.currentTarget as HTMLInputElement).value; }}
               class={inputClass}
             />
           </div>
 
           <div class="space-y-1">
-            <label for="precioRef" class={labelClass}>Precio de referencia Bs.</label>
+            <label for="cantidad" class={labelClass}>Cantidad</label>
             <input
-              id="precioRef"
+              id="cantidad"
+              type="number"
+              min="0"
+              value={form.cantidad}
+              oninput={(e) => { overrides.cantidad = Number((e.currentTarget as HTMLInputElement).value); }}
+              class={inputClass}
+            />
+          </div>
+
+          <div class="space-y-1">
+            <label for="precioUnitarioReferencial" class={labelClass}>Precio unitario ref. Bs.</label>
+            <input
+              id="precioUnitarioReferencial"
               type="number"
               min="0"
               step="0.01"
-              bind:value={form.precioRef}
-              class={inputClass}
-            />
-          </div>
-        </section>
-
-        <!-- Section 3: Clasificación -->
-        <section class="rounded-xl border bg-white p-4 space-y-4">
-          <p class={sectionLabelClass}>Clasificación</p>
-
-          <div class="space-y-1">
-            <label for="categoria" class={labelClass}>Categoría</label>
-            <input
-              id="categoria"
-              type="text"
-              bind:value={form.categoria}
+              value={form.precioUnitarioReferencial}
+              oninput={(e) => { overrides.precioUnitarioReferencial = Number((e.currentTarget as HTMLInputElement).value); }}
               class={inputClass}
             />
           </div>
 
-          <div class="space-y-1">
-            <label for="empaque" class={labelClass}>Empaque</label>
-            <input
-              id="empaque"
-              type="text"
-              bind:value={form.empaque}
-              class={inputClass}
-            />
-          </div>
-
-          {#if insumo.tipo === 'medicamento'}
-            <div class="space-y-1">
-              <label for="principioActivo" class={labelClass}>Principio activo</label>
-              <input
-                id="principioActivo"
-                type="text"
-                bind:value={form.principioActivo}
-                class={inputClass}
-              />
-            </div>
-
-            <div class="space-y-1">
-              <label for="laboratorio" class={labelClass}>Laboratorio</label>
-              <input
-                id="laboratorio"
-                type="text"
-                bind:value={form.laboratorio}
-                class={inputClass}
-              />
-            </div>
-
-            <div class="space-y-1">
-              <label for="formaFarmaceutica" class={labelClass}>Forma farmacéutica</label>
-              <select
-                id="formaFarmaceutica"
-                bind:value={form.formaFarmaceutica}
-                class={inputClass}
-              >
-                <option value="">Seleccionar...</option>
-                <option value="Tableta">Tableta</option>
-                <option value="Cápsula">Cápsula</option>
-                <option value="Comprimido">Comprimido</option>
-                <option value="Jarabe">Jarabe</option>
-                <option value="Suspensión">Suspensión</option>
-                <option value="Crema">Crema</option>
-                <option value="Ungüento">Ungüento</option>
-                <option value="Inyectable">Inyectable</option>
-              </select>
-            </div>
+          {#if $editMutation.isError}
+            <p class="text-xs text-destructive">
+              {$editMutation.error?.message ?? 'Error al guardar los cambios.'}
+            </p>
           {/if}
-        </section>
-
-        <!-- Section 4: Observaciones -->
-        <section class="rounded-xl border bg-white p-4 space-y-4">
-          <p class={sectionLabelClass}>Observaciones</p>
-
-          <div class="space-y-1">
-            <label for="observaciones" class={labelClass}>Observaciones</label>
-            <textarea
-              id="observaciones"
-              rows={3}
-              bind:value={form.observaciones}
-              class={inputClass}
-            ></textarea>
-          </div>
         </section>
       </form>
     {/if}
   </main>
 
   <!-- Fixed bottom bar -->
-  {#if insumo && !guardado}
+  {#if $supplyQuery.isSuccess && !$editMutation.isSuccess}
     <div class="fixed bottom-0 left-0 right-0 md:pl-64 bg-white border-t px-4 py-3">
       <button
         type="submit"
         form="edit-form"
-        disabled={!form.nombre}
+        disabled={!form.numeroLote || $editMutation.isPending}
         class="w-full rounded-lg bg-[#2D6A4F] text-white text-sm font-semibold py-2.5 px-4 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-[#255c43] transition-colors"
       >
-        Guardar cambios
+        {$editMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
       </button>
     </div>
   {/if}

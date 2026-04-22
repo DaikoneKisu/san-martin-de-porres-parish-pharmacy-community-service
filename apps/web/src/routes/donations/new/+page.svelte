@@ -4,7 +4,6 @@
   import {
     ArrowLeft,
     User,
-    Building2,
     Package,
     Pill,
     Stethoscope,
@@ -15,47 +14,162 @@
     X,
     Plus,
     Search,
+    Loader2,
   } from 'lucide-svelte';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
+  import { api } from '$lib/api';
 
   // ── Types ──────────────────────────────────────────────────────────────────
   type Donante = {
     id: string;
-    tipo: 'persona' | 'institucion';
     nombre: string;
-    identificacion: string;
+    pais: string;
+    contacto: string;
+    esFijo: boolean;
   };
 
-  type InsumoItem = {
-    id: string;
-    tipo: 'medicamento' | 'material';
-    nombre: string;
-    presentacion: string;
+  type ItemMedicamento = {
+    tipo: 'MEDICAMENTO';
+    tempId: string;
+    medicamentoId: string;
+    medicamentoNombre: string;
+    viaAdministracionId: string;
+    formaFarmaceuticaId: string;
+    empaqueId: string;
+    cantidadPorEmpaque: number;
+    numeroLote: string;
+    fechaVencimiento: string;
     cantidad: number;
-    lote: string;
-    vencimiento: string;
-    precioRef: string;
+    precioUnitarioReferencial: number;
   };
 
-  // ── Mock data ──────────────────────────────────────────────────────────────
-  const DONANTES_MOCK: Donante[] = [
-    { id: 'd1', tipo: 'persona', nombre: 'María González', identificacion: 'V-12345678' },
-    { id: 'd2', tipo: 'institucion', nombre: 'Fundación Salud Bolívar', identificacion: 'J-30987654-0' },
-    { id: 'd3', tipo: 'persona', nombre: 'Carlos Martínez', identificacion: 'V-8765432' },
-    { id: 'd4', tipo: 'institucion', nombre: 'Iglesia San José', identificacion: 'J-28765432-1' },
-  ];
+  type ItemMaterial = {
+    tipo: 'MATERIAL';
+    tempId: string;
+    nombre: string;
+    numeroLote: string;
+    fechaVencimiento: string;
+    cantidad: number;
+    precioUnitarioReferencial: number;
+  };
 
-  const CATALOGO_MEDICAMENTOS = [
-    { id: 'cm1', nombre: 'Paracetamol 500mg', presentacion: 'Caja x 20 tab' },
-    { id: 'cm2', nombre: 'Ibuprofeno 400mg', presentacion: 'Caja x 10 tab' },
-    { id: 'cm3', nombre: 'Amoxicilina 500mg', presentacion: 'Caja x 12 cap' },
-    { id: 'cm4', nombre: 'Vitamina C 500mg', presentacion: 'Frasco x 30 comp' },
-  ];
+  type InsumoItem = ItemMedicamento | ItemMaterial;
 
-  const CATALOGO_MATERIALES = [
-    { id: 'cmat1', nombre: 'Guantes de látex', presentacion: 'Caja x 100 uds' },
-    { id: 'cmat2', nombre: 'Gasas estériles', presentacion: 'Caja x 50 uds' },
-    { id: 'cmat3', nombre: 'Jeringas 5ml', presentacion: 'Caja x 100 uds' },
-  ];
+  // ── Query client ───────────────────────────────────────────────────────────
+  const queryClient = useQueryClient();
+
+  // ── Queries ────────────────────────────────────────────────────────────────
+  const donorsQuery = createQuery({
+    queryKey: ['donors'],
+    queryFn: async () => {
+      const res = await api.api.donations.donors.get();
+      if (res.error) throw new Error('Error al cargar donantes');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 2,
+  });
+
+  const medicationsQuery = createQuery({
+    queryKey: ['medications'],
+    queryFn: async () => {
+      const res = await api.api.inventory.medications.get();
+      if (res.error) throw new Error('Error al cargar medicamentos');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 10,
+  });
+
+  const adminRoutesQuery = createQuery({
+    queryKey: ['administration-routes'],
+    queryFn: async () => {
+      const res = await api.api.inventory['administration-routes'].get();
+      if (res.error) throw new Error('Error al cargar vías de administración');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const pharmaFormsQuery = createQuery({
+    queryKey: ['pharmaceutical-forms'],
+    queryFn: async () => {
+      const res = await api.api.inventory['pharmaceutical-forms'].get();
+      if (res.error) throw new Error('Error al cargar formas farmacéuticas');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 60,
+  });
+
+  const packagesQuery = createQuery({
+    queryKey: ['packages'],
+    queryFn: async () => {
+      const res = await api.api.inventory.packages.get();
+      if (res.error) throw new Error('Error al cargar empaques');
+      return res.data!;
+    },
+    staleTime: 1000 * 60 * 60,
+  });
+
+  // ── Mutations ──────────────────────────────────────────────────────────────
+  const createDonorMutation = createMutation({
+    mutationFn: async (body: { nombre: string; pais: string; contacto: string; esFijo: boolean }) => {
+      const res = await api.api.donations.donors.post(body);
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al crear donante');
+      return res.data!;
+    },
+    onSuccess: (donor) => {
+      donante = donor as Donante;
+      drawerMode = null;
+      nuevoDonantNombre = '';
+      nuevoDonantPais = '';
+      nuevoDonantContacto = '';
+      nuevoDonantEsFijo = false;
+      queryClient.invalidateQueries({ queryKey: ['donors'] });
+    },
+  });
+
+  const createDonationMutation = createMutation({
+    mutationFn: async () => {
+      if (!donante) throw new Error('Donante requerido');
+      const res = await api.api.donations.post({
+        donanteId: donante.id,
+        fechaRecepcion: fecha,
+        observaciones,
+        items: items.map((item) => {
+          if (item.tipo === 'MEDICAMENTO') {
+            return {
+              tipo: 'MEDICAMENTO' as const,
+              medicamentoId: item.medicamentoId,
+              viaAdministracionId: item.viaAdministracionId,
+              formaFarmaceuticaId: item.formaFarmaceuticaId,
+              empaqueId: item.empaqueId,
+              cantidadPorEmpaque: item.cantidadPorEmpaque,
+              numeroLote: item.numeroLote,
+              fechaVencimiento: item.fechaVencimiento,
+              cantidad: item.cantidad,
+              precioUnitarioReferencial: item.precioUnitarioReferencial,
+            };
+          } else {
+            return {
+              tipo: 'MATERIAL' as const,
+              nombre: item.nombre,
+              numeroLote: item.numeroLote,
+              fechaVencimiento: item.fechaVencimiento,
+              cantidad: item.cantidad,
+              precioUnitarioReferencial: item.precioUnitarioReferencial,
+            };
+          }
+        }),
+      });
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al crear donación');
+      return res.data!;
+    },
+    onSuccess: () => {
+      guardado = true;
+    },
+    onError: (err) => {
+      donationError = (err as Error).message;
+    },
+  });
 
   // ── Wizard state ───────────────────────────────────────────────────────────
   let paso = $state<0 | 1 | 2>(0);
@@ -63,54 +177,88 @@
   let fecha = $state(DateTime.now().toISODate() ?? '');
   let observaciones = $state('');
   let items = $state<InsumoItem[]>([]);
-
-  // ── Drawer state ───────────────────────────────────────────────────────────
   let drawerMode = $state<'donante' | 'nuevo-donante' | 'insumo' | null>(null);
+  let guardado = $state(false);
+  let donationError = $state('');
 
-  // ── Donante drawer ─────────────────────────────────────────────────────────
+  // ── Donor search ───────────────────────────────────────────────────────────
   let searchDonante = $state('');
+
+  // ── New donor form ─────────────────────────────────────────────────────────
+  let nuevoDonantNombre = $state('');
+  let nuevoDonantPais = $state('');
+  let nuevoDonantContacto = $state('');
+  let nuevoDonantEsFijo = $state(false);
+
+  // ── Insumo drawer state ────────────────────────────────────────────────────
+  let insumoStep = $state<'tipo' | 'catalogo' | 'datos'>('tipo');
+  let insumoTipo = $state<'MEDICAMENTO' | 'MATERIAL'>('MEDICAMENTO');
+  let insumoSeleccionado = $state<{ id: string; nombre: string } | null>(null);
+  let searchInsumo = $state('');
+
+  // ── Insumo form for MEDICAMENTO ────────────────────────────────────────────
+  let insForm = $state({
+    viaAdministracionId: '',
+    formaFarmaceuticaId: '',
+    empaqueId: '',
+    cantidadPorEmpaque: 1,
+    numeroLote: '',
+    fechaVencimiento: '',
+    cantidad: 1,
+    precioUnitarioReferencial: 0,
+  });
+
+  // ── Insumo form for MATERIAL ───────────────────────────────────────────────
+  let matForm = $state({
+    nombre: '',
+    numeroLote: '',
+    fechaVencimiento: '',
+    cantidad: 1,
+    precioUnitarioReferencial: 0,
+  });
+
+  // ── Derived ────────────────────────────────────────────────────────────────
   const filteredDonantes = $derived(
-    DONANTES_MOCK.filter(
-      (d) =>
+    ($donorsQuery.data ?? []).filter(
+      (d: any) =>
         d.nombre.toLowerCase().includes(searchDonante.toLowerCase()) ||
-        d.identificacion.toLowerCase().includes(searchDonante.toLowerCase()),
+        d.contacto.toLowerCase().includes(searchDonante.toLowerCase()),
     ),
   );
 
-  // ── Nuevo donante sub-form ─────────────────────────────────────────────────
-  let nuevoDonanteTipo = $state<'persona' | 'institucion'>('persona');
-  let nuevoDonantNombre = $state('');
-  let nuevoDonantIdentificacion = $state('');
-
-  // ── Insumo drawer ──────────────────────────────────────────────────────────
-  let insumoStep = $state<'tipo' | 'catalogo' | 'datos'>('tipo');
-  let insumoTipo = $state<'medicamento' | 'material'>('medicamento');
-  let insumoSeleccionado = $state<{ id: string; nombre: string; presentacion: string } | null>(null);
-  let searchInsumo = $state('');
-  let insumoForm = $state({ lote: '', vencimiento: '', cantidad: '', precioRef: '' });
-
-  // ── Success state ──────────────────────────────────────────────────────────
-  let guardado = $state(false);
-
-  // ── Derived ────────────────────────────────────────────────────────────────
   const catalogoFiltrado = $derived(
-    (insumoTipo === 'medicamento' ? CATALOGO_MEDICAMENTOS : CATALOGO_MATERIALES).filter(
-      (c) =>
-        c.nombre.toLowerCase().includes(searchInsumo.toLowerCase()) ||
-        c.presentacion.toLowerCase().includes(searchInsumo.toLowerCase()),
-    ),
+    insumoTipo === 'MEDICAMENTO'
+      ? ($medicationsQuery.data ?? []).filter((m: any) => {
+          const name = m.marca?.nombre ?? '';
+          return name.toLowerCase().includes(searchInsumo.toLowerCase());
+        })
+      : [],
   );
 
   const totalDonacion = $derived(
-    items.reduce((sum, item) => sum + item.cantidad * parseFloat(item.precioRef || '0'), 0),
+    items.reduce((sum, item) => sum + item.cantidad * item.precioUnitarioReferencial, 0),
   );
 
   // ── Helpers ────────────────────────────────────────────────────────────────
+  function getMedNombre(m: NonNullable<typeof $medicationsQuery.data>[0]): string {
+    return m.marca?.nombre ?? m.id;
+  }
+
   function resetInsumoDrawer() {
     drawerMode = null;
     insumoStep = 'tipo';
     insumoSeleccionado = null;
-    insumoForm = { lote: '', vencimiento: '', cantidad: '', precioRef: '' };
+    insForm = {
+      viaAdministracionId: '',
+      formaFarmaceuticaId: '',
+      empaqueId: '',
+      cantidadPorEmpaque: 1,
+      numeroLote: '',
+      fechaVencimiento: '',
+      cantidad: 1,
+      precioUnitarioReferencial: 0,
+    };
+    matForm = { nombre: '', numeroLote: '', fechaVencimiento: '', cantidad: 1, precioUnitarioReferencial: 0 };
     searchInsumo = '';
   }
 
@@ -120,38 +268,49 @@
     searchDonante = '';
   }
 
-  function registrarNuevoDonante() {
-    if (!nuevoDonantNombre || !nuevoDonantIdentificacion) return;
-    const newDonante: Donante = {
-      id: `d-${Date.now()}`,
-      tipo: nuevoDonanteTipo,
-      nombre: nuevoDonantNombre,
-      identificacion: nuevoDonantIdentificacion,
-    };
-    donante = newDonante;
-    drawerMode = null;
-    nuevoDonanteTipo = 'persona';
-    nuevoDonantNombre = '';
-    nuevoDonantIdentificacion = '';
-  }
-
-  function agregarInsumo() {
-    if (!insumoSeleccionado || !insumoForm.vencimiento || !insumoForm.cantidad) return;
+  function agregarMedicamento() {
+    if (
+      !insumoSeleccionado ||
+      !insForm.viaAdministracionId ||
+      !insForm.formaFarmaceuticaId ||
+      !insForm.empaqueId ||
+      !insForm.fechaVencimiento ||
+      insForm.cantidad <= 0
+    )
+      return;
     items.push({
-      id: `ins-${Date.now()}`,
-      tipo: insumoTipo,
-      nombre: insumoSeleccionado.nombre,
-      presentacion: insumoSeleccionado.presentacion,
-      cantidad: parseInt(insumoForm.cantidad, 10),
-      lote: insumoForm.lote,
-      vencimiento: insumoForm.vencimiento,
-      precioRef: insumoForm.precioRef,
+      tipo: 'MEDICAMENTO',
+      tempId: `med-${Date.now()}`,
+      medicamentoId: insumoSeleccionado.id,
+      medicamentoNombre: insumoSeleccionado.nombre,
+      viaAdministracionId: insForm.viaAdministracionId,
+      formaFarmaceuticaId: insForm.formaFarmaceuticaId,
+      empaqueId: insForm.empaqueId,
+      cantidadPorEmpaque: insForm.cantidadPorEmpaque,
+      numeroLote: insForm.numeroLote,
+      fechaVencimiento: insForm.fechaVencimiento,
+      cantidad: insForm.cantidad,
+      precioUnitarioReferencial: insForm.precioUnitarioReferencial,
     });
     resetInsumoDrawer();
   }
 
-  function eliminarItem(id: string) {
-    const idx = items.findIndex((i) => i.id === id);
+  function agregarMaterial() {
+    if (!matForm.nombre || !matForm.fechaVencimiento || matForm.cantidad <= 0) return;
+    items.push({
+      tipo: 'MATERIAL',
+      tempId: `mat-${Date.now()}`,
+      nombre: matForm.nombre,
+      numeroLote: matForm.numeroLote,
+      fechaVencimiento: matForm.fechaVencimiento,
+      cantidad: matForm.cantidad,
+      precioUnitarioReferencial: matForm.precioUnitarioReferencial,
+    });
+    resetInsumoDrawer();
+  }
+
+  function eliminarItem(tempId: string) {
+    const idx = items.findIndex((i) => i.tempId === tempId);
     if (idx !== -1) items.splice(idx, 1);
   }
 
@@ -163,6 +322,7 @@
     items = [];
     drawerMode = null;
     guardado = false;
+    donationError = '';
   }
 
   function formatDate(iso: string): string {
@@ -205,7 +365,6 @@
     <!-- Step indicator -->
     <div class="flex items-center px-4 pb-6">
       {#each [0, 1, 2] as step (step)}
-        <!-- Circle -->
         <div
           class="flex size-9 shrink-0 items-center justify-center rounded-full text-sm font-bold transition-colors
             {paso > step
@@ -220,7 +379,6 @@
             {step + 1}
           {/if}
         </div>
-        <!-- Connector line (except after last circle) -->
         {#if step < 2}
           <div
             class="h-0.5 flex-1 transition-colors
@@ -253,21 +411,17 @@
         {:else}
           <div class="flex items-center justify-between rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
             <div class="flex items-center gap-3">
-              {#if donante.tipo === 'persona'}
-                <User class="size-5 text-[#2D6A4F]" />
-              {:else}
-                <Building2 class="size-5 text-[#2D6A4F]" />
-              {/if}
+              <User class="size-5 text-[#2D6A4F]" />
               <div>
                 <p class="font-semibold text-gray-900">{donante.nombre}</p>
-                <p class="text-sm text-gray-500">{donante.identificacion}</p>
+                <p class="text-sm text-gray-500">{donante.pais} · {donante.contacto}</p>
               </div>
             </div>
             <button
               onclick={() => (drawerMode = 'donante')}
               class="rounded-md px-2 py-1 text-xs font-medium text-gray-500 hover:bg-gray-100"
             >
-              Cambiar donante
+              Cambiar
             </button>
           </div>
         {/if}
@@ -295,7 +449,7 @@
             bind:value={observaciones}
             rows="3"
             placeholder="Notas sobre la donación..."
-            class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm resize-none focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+            class="w-full resize-none rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
           ></textarea>
         </div>
       </div>
@@ -321,31 +475,36 @@
           </div>
         {:else}
           <div class="space-y-3">
-            {#each items as item (item.id)}
+            {#each items as item (item.tempId)}
               <div class="flex items-start gap-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
                 <div class="mt-0.5 shrink-0">
-                  {#if item.tipo === 'medicamento'}
+                  {#if item.tipo === 'MEDICAMENTO'}
                     <Pill class="size-5 text-[#2D6A4F]" />
                   {:else}
                     <Stethoscope class="size-5 text-blue-600" />
                   {/if}
                 </div>
                 <div class="min-w-0 flex-1">
-                  <p class="font-medium text-gray-900">{item.nombre}</p>
-                  <p class="text-sm text-gray-500">{item.presentacion}</p>
+                  <p class="font-medium text-gray-900">
+                    {item.tipo === 'MEDICAMENTO' ? item.medicamentoNombre : item.nombre}
+                  </p>
+                  <span class="inline-block rounded-full px-2 py-0.5 text-xs font-medium
+                    {item.tipo === 'MEDICAMENTO' ? 'bg-[#2D6A4F]/10 text-[#2D6A4F]' : 'bg-blue-50 text-blue-600'}">
+                    {item.tipo === 'MEDICAMENTO' ? 'Medicamento' : 'Material'}
+                  </span>
                   <div class="mt-1 flex flex-wrap gap-2 text-xs text-gray-500">
                     <span class="font-medium text-gray-700">x{item.cantidad}</span>
-                    {#if item.lote}
-                      <span>Lote: {item.lote}</span>
+                    {#if item.numeroLote}
+                      <span>Lote: {item.numeroLote}</span>
                     {/if}
-                    <span>Vence: {formatDate(item.vencimiento)}</span>
-                    {#if item.precioRef}
-                      <span>Bs. {item.precioRef}</span>
+                    <span>Vence: {formatDate(item.fechaVencimiento)}</span>
+                    {#if item.precioUnitarioReferencial > 0}
+                      <span>Bs. {item.precioUnitarioReferencial.toFixed(2)}</span>
                     {/if}
                   </div>
                 </div>
                 <button
-                  onclick={() => eliminarItem(item.id)}
+                  onclick={() => eliminarItem(item.tempId)}
                   class="shrink-0 rounded-md p-1.5 text-red-500 hover:bg-red-50"
                   aria-label="Eliminar insumo"
                 >
@@ -362,16 +521,12 @@
       <div class="space-y-4 px-4">
         <!-- Donante + fecha summary -->
         <div class="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
-          <h2 class="mb-3 text-sm font-semibold text-gray-500 uppercase tracking-wide">Resumen de donación</h2>
+          <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-gray-500">Resumen de donación</h2>
           <div class="flex items-center gap-3">
-            {#if donante?.tipo === 'persona'}
-              <User class="size-5 text-[#2D6A4F]" />
-            {:else}
-              <Building2 class="size-5 text-[#2D6A4F]" />
-            {/if}
+            <User class="size-5 text-[#2D6A4F]" />
             <div>
               <p class="font-semibold text-gray-900">{donante?.nombre}</p>
-              <p class="text-sm text-gray-500">{donante?.identificacion}</p>
+              <p class="text-sm text-gray-500">{donante?.pais} · {donante?.contacto}</p>
             </div>
           </div>
           <p class="mt-2 text-sm text-gray-600">
@@ -386,21 +541,25 @@
 
         <!-- Items list -->
         <div class="space-y-2">
-          {#each items as item (item.id)}
+          {#each items as item (item.tempId)}
             <div class="flex items-start gap-3 rounded-lg border border-gray-100 bg-gray-50 p-3">
-              {#if item.tipo === 'medicamento'}
+              {#if item.tipo === 'MEDICAMENTO'}
                 <Pill class="mt-0.5 size-4 shrink-0 text-[#2D6A4F]" />
               {:else}
                 <Stethoscope class="mt-0.5 size-4 shrink-0 text-blue-600" />
               {/if}
               <div class="flex-1">
-                <p class="text-sm font-medium text-gray-900">{item.nombre}</p>
-                <p class="text-xs text-gray-500">{item.presentacion}</p>
+                <p class="text-sm font-medium text-gray-900">
+                  {item.tipo === 'MEDICAMENTO' ? item.medicamentoNombre : item.nombre}
+                </p>
+                <p class="text-xs text-gray-500">
+                  {item.tipo === 'MEDICAMENTO' ? 'Medicamento' : 'Material'}
+                </p>
               </div>
               <div class="text-right text-sm">
                 <p class="font-medium text-gray-900">x{item.cantidad}</p>
-                {#if item.precioRef}
-                  <p class="text-xs text-gray-500">Bs. {item.precioRef}</p>
+                {#if item.precioUnitarioReferencial > 0}
+                  <p class="text-xs text-gray-500">Bs. {item.precioUnitarioReferencial.toFixed(2)}</p>
                 {/if}
               </div>
             </div>
@@ -420,6 +579,13 @@
             Se generará automáticamente el asiento de ingreso contable.
           </p>
         </div>
+
+        <!-- Donation error -->
+        {#if donationError}
+          <p class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600">
+            {donationError}
+          </p>
+        {/if}
       </div>
     {/if}
   </div>
@@ -456,10 +622,16 @@
         ← Atrás
       </button>
       <button
-        onclick={() => (guardado = true)}
-        class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42]"
+        onclick={() => $createDonationMutation.mutate()}
+        disabled={$createDonationMutation.isPending}
+        class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
       >
-        Confirmar y guardar
+        {#if $createDonationMutation.isPending}
+          <Loader2 class="size-4 animate-spin" />
+          Guardando...
+        {:else}
+          Confirmar y guardar
+        {/if}
       </button>
     {/if}
   </div>
@@ -499,34 +671,39 @@
             <Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
             <input
               type="text"
-              placeholder="Buscar por nombre o identificación..."
+              placeholder="Buscar por nombre o contacto..."
               bind:value={searchDonante}
               class="w-full rounded-lg border border-gray-300 py-2.5 pr-3 pl-9 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
             />
           </div>
 
-          <!-- List -->
-          <div class="space-y-2">
-            {#each filteredDonantes as d (d.id)}
-              <button
-                onclick={() => selectDonante(d)}
-                class="flex w-full items-center gap-3 rounded-lg border border-gray-100 p-3 text-left hover:border-[#2D6A4F]/40 hover:bg-[#2D6A4F]/5"
-              >
-                {#if d.tipo === 'persona'}
+          <!-- Loading state -->
+          {#if $donorsQuery.isPending}
+            <div class="space-y-2">
+              {#each [1, 2, 3] as skeleton (skeleton)}
+                <div class="h-14 animate-pulse rounded-lg bg-gray-100"></div>
+              {/each}
+            </div>
+          {:else}
+            <!-- List -->
+            <div class="space-y-2">
+              {#each filteredDonantes as d (d.id)}
+                <button
+                  onclick={() => selectDonante(d as Donante)}
+                  class="flex w-full items-center gap-3 rounded-lg border border-gray-100 p-3 text-left hover:border-[#2D6A4F]/40 hover:bg-[#2D6A4F]/5"
+                >
                   <User class="size-5 shrink-0 text-[#2D6A4F]" />
-                {:else}
-                  <Building2 class="size-5 shrink-0 text-[#2D6A4F]" />
-                {/if}
-                <div>
-                  <p class="text-sm font-medium text-gray-900">{d.nombre}</p>
-                  <p class="text-xs text-gray-500">{d.identificacion}</p>
-                </div>
-              </button>
-            {/each}
-            {#if filteredDonantes.length === 0}
-              <p class="py-6 text-center text-sm text-gray-400">Sin resultados</p>
-            {/if}
-          </div>
+                  <div>
+                    <p class="text-sm font-medium text-gray-900">{d.nombre}</p>
+                    <p class="text-xs text-gray-500">{d.pais} · {d.contacto}</p>
+                  </div>
+                </button>
+              {/each}
+              {#if filteredDonantes.length === 0}
+                <p class="py-6 text-center text-sm text-gray-400">Sin resultados</p>
+              {/if}
+            </div>
+          {/if}
         </div>
       </Drawer.Content>
     </Drawer.Portal>
@@ -553,32 +730,7 @@
           <h2 class="text-base font-semibold text-gray-900">Nuevo donante</h2>
         </div>
 
-        <div class="flex-1 overflow-y-auto space-y-4 p-4">
-          <!-- Tipo selector -->
-          <div class="space-y-1.5">
-            <p class="text-sm font-medium text-gray-700">Tipo</p>
-            <div class="flex gap-2">
-              <button
-                onclick={() => (nuevoDonanteTipo = 'persona')}
-                class="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors
-                  {nuevoDonanteTipo === 'persona'
-                    ? 'border-[#2D6A4F] bg-[#2D6A4F]/5 text-[#2D6A4F]'
-                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'}"
-              >
-                Persona
-              </button>
-              <button
-                onclick={() => (nuevoDonanteTipo = 'institucion')}
-                class="flex-1 rounded-lg border py-2.5 text-sm font-medium transition-colors
-                  {nuevoDonanteTipo === 'institucion'
-                    ? 'border-[#2D6A4F] bg-[#2D6A4F]/5 text-[#2D6A4F]'
-                    : 'border-gray-300 text-gray-600 hover:bg-gray-50'}"
-              >
-                Institución
-              </button>
-            </div>
-          </div>
-
+        <div class="flex-1 space-y-4 overflow-y-auto p-4">
           <!-- Nombre -->
           <div class="space-y-1.5">
             <label class="block text-sm font-medium text-gray-700" for="nd-nombre">
@@ -593,26 +745,60 @@
             />
           </div>
 
-          <!-- Identificación -->
+          <!-- País -->
           <div class="space-y-1.5">
-            <label class="block text-sm font-medium text-gray-700" for="nd-id">
-              {nuevoDonanteTipo === 'persona' ? 'Cédula' : 'RIF'} *
+            <label class="block text-sm font-medium text-gray-700" for="nd-pais">
+              País *
             </label>
             <input
-              id="nd-id"
+              id="nd-pais"
               type="text"
-              bind:value={nuevoDonantIdentificacion}
-              placeholder={nuevoDonanteTipo === 'persona' ? 'Ej. V-12345678' : 'Ej. J-30987654-0'}
+              bind:value={nuevoDonantPais}
+              placeholder="Ej. Venezuela"
               class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
             />
           </div>
 
+          <!-- Contacto -->
+          <div class="space-y-1.5">
+            <label class="block text-sm font-medium text-gray-700" for="nd-contacto">
+              Contacto *
+            </label>
+            <input
+              id="nd-contacto"
+              type="text"
+              bind:value={nuevoDonantContacto}
+              placeholder="Teléfono, email o dirección"
+              class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+            />
+          </div>
+
+          <!-- Es fijo -->
+          <label class="flex cursor-pointer items-center gap-3">
+            <input
+              type="checkbox"
+              bind:checked={nuevoDonantEsFijo}
+              class="size-4 rounded border-gray-300 text-[#2D6A4F] focus:ring-[#2D6A4F]"
+            />
+            <span class="text-sm font-medium text-gray-700">Donante recurrente</span>
+          </label>
+
           <button
-            onclick={registrarNuevoDonante}
-            disabled={!nuevoDonantNombre || !nuevoDonantIdentificacion}
-            class="w-full rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
+            onclick={() => $createDonorMutation.mutate({
+              nombre: nuevoDonantNombre,
+              pais: nuevoDonantPais,
+              contacto: nuevoDonantContacto,
+              esFijo: nuevoDonantEsFijo,
+            })}
+            disabled={!nuevoDonantNombre || !nuevoDonantPais || !nuevoDonantContacto || $createDonorMutation.isPending}
+            class="flex w-full items-center justify-center gap-2 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
           >
-            Registrar y seleccionar
+            {#if $createDonorMutation.isPending}
+              <Loader2 class="size-4 animate-spin" />
+              Registrando...
+            {:else}
+              Registrar y seleccionar
+            {/if}
           </button>
         </div>
       </Drawer.Content>
@@ -654,7 +840,7 @@
           <div class="flex flex-col gap-4 p-6">
             <button
               onclick={() => {
-                insumoTipo = 'medicamento';
+                insumoTipo = 'MEDICAMENTO';
                 insumoStep = 'catalogo';
               }}
               class="flex flex-col items-center gap-3 rounded-xl border-2 border-gray-200 p-6 hover:border-[#2D6A4F] hover:bg-[#2D6A4F]/5"
@@ -664,8 +850,8 @@
             </button>
             <button
               onclick={() => {
-                insumoTipo = 'material';
-                insumoStep = 'catalogo';
+                insumoTipo = 'MATERIAL';
+                insumoStep = 'datos';
               }}
               class="flex flex-col items-center gap-3 rounded-xl border-2 border-gray-200 p-6 hover:border-blue-500 hover:bg-blue-50"
             >
@@ -674,7 +860,7 @@
             </button>
           </div>
 
-        <!-- Step: catalogo -->
+        <!-- Step: catalogo (MEDICAMENTO only) -->
         {:else if insumoStep === 'catalogo'}
           <div class="flex items-center gap-3 border-b px-4 py-3">
             <button
@@ -684,7 +870,7 @@
             >
               <ArrowLeft class="size-5" />
             </button>
-            <h2 class="flex-1 text-base font-semibold text-gray-900">Seleccionar del catálogo</h2>
+            <h2 class="flex-1 text-base font-semibold text-gray-900">Seleccionar medicamento</h2>
             <button
               onclick={resetInsumoDrawer}
               class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
@@ -698,43 +884,58 @@
               <Search class="absolute top-1/2 left-3 size-4 -translate-y-1/2 text-gray-400" />
               <input
                 type="text"
-                placeholder="Buscar..."
+                placeholder="Buscar medicamento..."
                 bind:value={searchInsumo}
                 class="w-full rounded-lg border border-gray-300 py-2.5 pr-3 pl-9 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
               />
             </div>
-            <div class="space-y-2">
-              {#each catalogoFiltrado as cat (cat.id)}
-                <button
-                  onclick={() => {
-                    insumoSeleccionado = cat;
-                    insumoStep = 'datos';
-                  }}
-                  class="flex w-full flex-col items-start rounded-lg border border-gray-100 p-3 text-left hover:border-[#2D6A4F]/40 hover:bg-[#2D6A4F]/5"
-                >
-                  <p class="text-sm font-medium text-gray-900">{cat.nombre}</p>
-                  <p class="text-xs text-gray-500">{cat.presentacion}</p>
-                </button>
-              {/each}
-              {#if catalogoFiltrado.length === 0}
-                <p class="py-6 text-center text-sm text-gray-400">Sin resultados</p>
-              {/if}
-            </div>
+
+            {#if $medicationsQuery.isPending}
+              <div class="space-y-2">
+                {#each [1, 2, 3, 4] as skeleton (skeleton)}
+                  <div class="h-12 animate-pulse rounded-lg bg-gray-100"></div>
+                {/each}
+              </div>
+            {:else}
+              <div class="space-y-2">
+                {#each catalogoFiltrado as med (med.id)}
+                  <button
+                    onclick={() => {
+                      insumoSeleccionado = { id: med.id, nombre: getMedNombre(med) };
+                      insumoStep = 'datos';
+                    }}
+                    class="flex w-full flex-col items-start rounded-lg border border-gray-100 p-3 text-left hover:border-[#2D6A4F]/40 hover:bg-[#2D6A4F]/5"
+                  >
+                    <p class="text-sm font-medium text-gray-900">{getMedNombre(med)}</p>
+                    {#if med.marca?.laboratorio?.nombre}
+                      <p class="text-xs text-gray-500">{med.marca.laboratorio.nombre}</p>
+                    {/if}
+                  </button>
+                {/each}
+                {#if catalogoFiltrado.length === 0}
+                  <p class="py-6 text-center text-sm text-gray-400">Sin resultados</p>
+                {/if}
+              </div>
+            {/if}
           </div>
 
         <!-- Step: datos -->
         {:else}
           <div class="flex items-center gap-3 border-b px-4 py-3">
             <button
-              onclick={() => (insumoStep = 'catalogo')}
+              onclick={() => (insumoTipo === 'MEDICAMENTO' ? (insumoStep = 'catalogo') : (insumoStep = 'tipo'))}
               class="rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
               aria-label="Volver"
             >
               <ArrowLeft class="size-5" />
             </button>
-            <div class="flex-1 min-w-0">
-              <h2 class="truncate text-base font-semibold text-gray-900">{insumoSeleccionado?.nombre}</h2>
-              <p class="truncate text-xs text-gray-500">{insumoSeleccionado?.presentacion}</p>
+            <div class="min-w-0 flex-1">
+              {#if insumoTipo === 'MEDICAMENTO' && insumoSeleccionado}
+                <h2 class="truncate text-base font-semibold text-gray-900">{insumoSeleccionado.nombre}</h2>
+                <p class="text-xs text-gray-500">Medicamento</p>
+              {:else}
+                <h2 class="text-base font-semibold text-gray-900">Material médico</h2>
+              {/if}
             </div>
             <button
               onclick={resetInsumoDrawer}
@@ -744,70 +945,220 @@
               <X class="size-5" />
             </button>
           </div>
-          <div class="flex-1 overflow-y-auto space-y-4 p-4">
-            <!-- Lote -->
-            <div class="space-y-1.5">
-              <label class="block text-sm font-medium text-gray-700" for="ins-lote">Lote</label>
-              <input
-                id="ins-lote"
-                type="text"
-                bind:value={insumoForm.lote}
-                placeholder="Número de lote"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
-              />
-            </div>
 
-            <!-- Vencimiento -->
-            <div class="space-y-1.5">
-              <label class="block text-sm font-medium text-gray-700" for="ins-venc">
-                Fecha de vencimiento *
-              </label>
-              <input
-                id="ins-venc"
-                type="date"
-                bind:value={insumoForm.vencimiento}
-                class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
-              />
-            </div>
+          <div class="flex-1 space-y-4 overflow-y-auto p-4">
+            {#if insumoTipo === 'MEDICAMENTO'}
+              <!-- Via de administración -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-via">
+                  Vía de administración *
+                </label>
+                <select
+                  id="ins-via"
+                  bind:value={insForm.viaAdministracionId}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                >
+                  <option value="">Seleccionar...</option>
+                  {#each ($adminRoutesQuery.data ?? []) as route (route.id)}
+                    <option value={route.id}>{route.nombre}</option>
+                  {/each}
+                </select>
+              </div>
 
-            <!-- Cantidad -->
-            <div class="space-y-1.5">
-              <label class="block text-sm font-medium text-gray-700" for="ins-cant">
-                Cantidad *
-              </label>
-              <input
-                id="ins-cant"
-                type="number"
-                min="1"
-                bind:value={insumoForm.cantidad}
-                placeholder="0"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
-              />
-            </div>
+              <!-- Forma farmacéutica -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-forma">
+                  Forma farmacéutica *
+                </label>
+                <select
+                  id="ins-forma"
+                  bind:value={insForm.formaFarmaceuticaId}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                >
+                  <option value="">Seleccionar...</option>
+                  {#each ($pharmaFormsQuery.data ?? []) as form (form.id)}
+                    <option value={form.id}>{form.nombre}</option>
+                  {/each}
+                </select>
+              </div>
 
-            <!-- Precio de referencia -->
-            <div class="space-y-1.5">
-              <label class="block text-sm font-medium text-gray-700" for="ins-precio">
-                Precio de referencia Bs. (opcional)
-              </label>
-              <input
-                id="ins-precio"
-                type="number"
-                min="0"
-                step="0.01"
-                bind:value={insumoForm.precioRef}
-                placeholder="0.00"
-                class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
-              />
-            </div>
+              <!-- Empaque -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-empaque">
+                  Empaque *
+                </label>
+                <select
+                  id="ins-empaque"
+                  bind:value={insForm.empaqueId}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                >
+                  <option value="">Seleccionar...</option>
+                  {#each ($packagesQuery.data ?? []) as pkg (pkg.id)}
+                    <option value={pkg.id}>{pkg.nombre}</option>
+                  {/each}
+                </select>
+              </div>
 
-            <button
-              onclick={agregarInsumo}
-              disabled={!insumoForm.vencimiento || !insumoForm.cantidad}
-              class="w-full rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              Agregar insumo
-            </button>
+              <!-- Cantidad por empaque -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-cant-emp">
+                  Cantidad por empaque *
+                </label>
+                <input
+                  id="ins-cant-emp"
+                  type="number"
+                  min="1"
+                  bind:value={insForm.cantidadPorEmpaque}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Número de lote -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-lote">
+                  Número de lote
+                </label>
+                <input
+                  id="ins-lote"
+                  type="text"
+                  bind:value={insForm.numeroLote}
+                  placeholder="Número de lote"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Fecha de vencimiento -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-venc">
+                  Fecha de vencimiento *
+                </label>
+                <input
+                  id="ins-venc"
+                  type="date"
+                  bind:value={insForm.fechaVencimiento}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Cantidad -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-cant">
+                  Cantidad *
+                </label>
+                <input
+                  id="ins-cant"
+                  type="number"
+                  min="1"
+                  bind:value={insForm.cantidad}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Precio unitario referencial -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="ins-precio">
+                  Precio unitario referencial Bs. (opcional)
+                </label>
+                <input
+                  id="ins-precio"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  bind:value={insForm.precioUnitarioReferencial}
+                  placeholder="0.00"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <button
+                onclick={agregarMedicamento}
+                disabled={!insForm.viaAdministracionId || !insForm.formaFarmaceuticaId || !insForm.empaqueId || !insForm.fechaVencimiento || insForm.cantidad <= 0}
+                class="w-full rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Agregar medicamento
+              </button>
+
+            {:else}
+              <!-- Material fields -->
+              <!-- Nombre -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="mat-nombre">
+                  Nombre *
+                </label>
+                <input
+                  id="mat-nombre"
+                  type="text"
+                  bind:value={matForm.nombre}
+                  placeholder="Nombre del material"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Número de lote -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="mat-lote">
+                  Número de lote
+                </label>
+                <input
+                  id="mat-lote"
+                  type="text"
+                  bind:value={matForm.numeroLote}
+                  placeholder="Número de lote"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Fecha de vencimiento -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="mat-venc">
+                  Fecha de vencimiento *
+                </label>
+                <input
+                  id="mat-venc"
+                  type="date"
+                  bind:value={matForm.fechaVencimiento}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Cantidad -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="mat-cant">
+                  Cantidad *
+                </label>
+                <input
+                  id="mat-cant"
+                  type="number"
+                  min="1"
+                  bind:value={matForm.cantidad}
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <!-- Precio unitario referencial -->
+              <div class="space-y-1.5">
+                <label class="block text-sm font-medium text-gray-700" for="mat-precio">
+                  Precio unitario referencial Bs. (opcional)
+                </label>
+                <input
+                  id="mat-precio"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  bind:value={matForm.precioUnitarioReferencial}
+                  placeholder="0.00"
+                  class="w-full rounded-lg border border-gray-300 px-3 py-2.5 text-sm focus:border-[#2D6A4F] focus:ring-1 focus:ring-[#2D6A4F] focus:outline-none"
+                />
+              </div>
+
+              <button
+                onclick={agregarMaterial}
+                disabled={!matForm.nombre || !matForm.fechaVencimiento || matForm.cantidad <= 0}
+                class="w-full rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-semibold text-white hover:bg-[#245a42] disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                Agregar material
+              </button>
+            {/if}
           </div>
         {/if}
       </Drawer.Content>

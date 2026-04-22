@@ -64,9 +64,19 @@ async function validateStockTx(
 }
 
 
+// ─── Staff (public listing for scheduling) ────────────────────────────────────
+
 // ─── Patients ─────────────────────────────────────────────────────────────────
 
 export class MedicalService {
+  async listStaff() {
+    return db.user.findMany({
+      where: { activo: true },
+      include: { roles: true },
+      orderBy: { nombre: "asc" },
+    });
+  }
+
   async listPatients() {
     return db.paciente.findMany({ orderBy: { nombre: "asc" } });
   }

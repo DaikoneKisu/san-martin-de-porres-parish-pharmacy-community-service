@@ -1,91 +1,7 @@
 <script lang="ts">
-	import {
-		ArrowLeft,
-		TrendingUp,
-		TrendingDown,
-		ChevronDown,
-		Minus,
-		Stethoscope,
-		HeartHandshake,
-		Receipt,
-		FileText,
-	} from 'lucide-svelte';
-
-	type Periodo = 'mes' | 'trimestre' | 'semestre' | 'personalizado';
-
-	interface BarData {
-		label: string;
-		ingresos: number;
-		egresos: number;
-	}
-
-	const DATA_MES: BarData[] = [
-		{ label: 'Sem 1', ingresos: 875, egresos: 420 },
-		{ label: 'Sem 2', ingresos: 1240, egresos: 288 },
-		{ label: 'Sem 3', ingresos: 950, egresos: 540 },
-		{ label: 'Sem 4', ingresos: 1100, egresos: 180 },
-	];
-	const DATA_TRIMESTRE: BarData[] = [
-		{ label: 'Abr', ingresos: 3800, egresos: 1620 },
-		{ label: 'May', ingresos: 4200, egresos: 1380 },
-		{ label: 'Jun', ingresos: 4165, egresos: 1428 },
-	];
-	const DATA_SEMESTRE: BarData[] = [
-		{ label: 'Ene', ingresos: 3200, egresos: 1800 },
-		{ label: 'Feb', ingresos: 3600, egresos: 1400 },
-		{ label: 'Mar', ingresos: 4000, egresos: 1600 },
-		{ label: 'Abr', ingresos: 3800, egresos: 1620 },
-		{ label: 'May', ingresos: 4200, egresos: 1380 },
-		{ label: 'Jun', ingresos: 4165, egresos: 1428 },
-	];
-
-	interface DesgloseItem {
-		origen: string;
-		monto: number;
-		color: string;
-	}
-
-	const DESGLOSE_INGRESOS: DesgloseItem[] = [
-		{
-			origen: 'Citas médicas',
-			monto: 1750,
-			color: 'text-blue-600 bg-blue-50 border-blue-200',
-		},
-		{
-			origen: 'Donaciones',
-			monto: 1600,
-			color: 'text-emerald-700 bg-emerald-50 border-emerald-200',
-		},
-		{
-			origen: 'Récipes externos',
-			monto: 815,
-			color: 'text-amber-700 bg-amber-50 border-amber-200',
-		},
-	];
-	const DESGLOSE_EGRESOS: DesgloseItem[] = [
-		{
-			origen: 'Compras de insumos',
-			monto: 828,
-			color: 'text-slate-600 bg-slate-50 border-slate-200',
-		},
-		{
-			origen: 'Servicios',
-			monto: 420,
-			color: 'text-slate-600 bg-slate-50 border-slate-200',
-		},
-		{
-			origen: 'Otros gastos',
-			monto: 180,
-			color: 'text-slate-600 bg-slate-50 border-slate-200',
-		},
-	];
-
-	const PERIODOS: { value: Periodo; label: string }[] = [
-		{ value: 'mes', label: 'Este mes' },
-		{ value: 'trimestre', label: 'Último trimestre' },
-		{ value: 'semestre', label: 'Último semestre' },
-		{ value: 'personalizado', label: 'Personalizado' },
-	];
+	import { ArrowLeft, TrendingUp, TrendingDown, Minus, AlertCircle } from 'lucide-svelte';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { api } from '$lib/api';
 
 	function formatVES(n: number): string {
 		return new Intl.NumberFormat('es-VE', {
@@ -95,51 +11,83 @@
 		}).format(n);
 	}
 
-	let periodo = $state<Periodo>('mes');
-	let periodoMenuOpen = $state(false);
-	let desdeStr = $state('');
-	let hastaStr = $state('');
+	function formatDate(iso: string): string {
+		return new Date(iso).toLocaleDateString('es-VE', {
+			day: '2-digit',
+			month: 'long',
+			year: 'numeric',
+		});
+	}
 
-	const data = $derived<BarData[]>(
-		periodo === 'mes'
-			? DATA_MES
-			: periodo === 'trimestre'
-				? DATA_TRIMESTRE
-				: periodo === 'semestre'
-					? DATA_SEMESTRE
-					: desdeStr && hastaStr
-						? DATA_MES
-						: [],
+	const currentYear = new Date().getFullYear();
+	const currentMonth = new Date().getMonth() + 1;
+	const currentQuarter = Math.ceil(currentMonth / 3);
+
+	const YEARS = Array.from({ length: 5 }, (_, i) => currentYear - i);
+	const MONTHS = [
+		{ value: 1, label: 'Enero' },
+		{ value: 2, label: 'Febrero' },
+		{ value: 3, label: 'Marzo' },
+		{ value: 4, label: 'Abril' },
+		{ value: 5, label: 'Mayo' },
+		{ value: 6, label: 'Junio' },
+		{ value: 7, label: 'Julio' },
+		{ value: 8, label: 'Agosto' },
+		{ value: 9, label: 'Septiembre' },
+		{ value: 10, label: 'Octubre' },
+		{ value: 11, label: 'Noviembre' },
+		{ value: 12, label: 'Diciembre' },
+	];
+
+	let periodoTipo = $state<'monthly' | 'quarterly' | 'custom'>('monthly');
+	let year = $state(currentYear);
+	let month = $state(currentMonth);
+	let quarter = $state(currentQuarter);
+	let customFrom = $state('');
+	let customTo = $state('');
+
+	const isCustomReady = $derived(
+		periodoTipo !== 'custom' || (!!customFrom && !!customTo),
 	);
 
-	const rangoCompleto = $derived(
-		periodo !== 'personalizado' || (!!desdeStr && !!hastaStr),
-	);
+	const queryParams = $derived({
+		period: periodoTipo,
+		...(periodoTipo === 'monthly' ? { year, month } : {}),
+		...(periodoTipo === 'quarterly' ? { year, quarter } : {}),
+		...(periodoTipo === 'custom' && customFrom && customTo
+			? { from: customFrom, to: customTo }
+			: {}),
+	});
 
-	const totalIngresos = $derived(
-		DESGLOSE_INGRESOS.reduce((s, d) => s + d.monto, 0),
-	);
-	const totalEgresos = $derived(
-		DESGLOSE_EGRESOS.reduce((s, d) => s + d.monto, 0),
-	);
-	const resultado = $derived(totalIngresos - totalEgresos);
+	const statementQuery = createQuery({
+		get queryKey() { return ['income-statement', queryParams]; },
+		queryFn: async () => {
+			const res = await api.api.accounting['income-statement'].get({
+				query: queryParams,
+			});
+			if (res.error) {
+				const err = res.error as { message?: string };
+				throw new Error(err.message ?? 'Error al cargar el estado de resultados');
+			}
+			return res.data;
+		},
+		get enabled() { return isCustomReady; },
+	});
+
+	const totalIngresos = $derived($statementQuery.data?.ingresos ?? 0);
+	const totalEgresos = $derived($statementQuery.data?.egresos ?? 0);
+	const resultado = $derived($statementQuery.data?.resultado ?? 0);
 	const superavit = $derived(resultado >= 0);
 
-	const maxValor = $derived(
-		Math.max(...data.flatMap((d) => [d.ingresos, d.egresos]), 1),
-	);
-
-	const periodoLabel = $derived(
-		periodo === 'personalizado' && desdeStr && hastaStr
-			? `${desdeStr} – ${hastaStr}`
-			: (PERIODOS.find((p) => p.value === periodo)?.label ?? ''),
-	);
-
-	function getIngresoIcon(origen: string) {
-		if (origen === 'Citas médicas') return Stethoscope;
-		if (origen === 'Donaciones') return HeartHandshake;
-		return Receipt;
-	}
+	const periodoLabel = $derived.by(() => {
+		if (periodoTipo === 'monthly') {
+			const m = MONTHS.find((mo) => mo.value === month)?.label ?? '';
+			return `${m} ${year}`;
+		}
+		if (periodoTipo === 'quarterly') return `T${quarter} ${year}`;
+		if (customFrom && customTo) return `${customFrom} – ${customTo}`;
+		return '';
+	});
 </script>
 
 <div class="flex min-h-screen flex-col bg-gray-50">
@@ -153,131 +101,97 @@
 			>
 				<ArrowLeft class="h-5 w-5" />
 			</a>
-
 			<h1 class="flex-1 text-base font-semibold text-gray-900">
 				Estado de resultados
 			</h1>
-
-			<!-- Period selector -->
-			<div class="relative">
-				<button
-					onclick={() => (periodoMenuOpen = !periodoMenuOpen)}
-					class="flex max-w-[160px] items-center gap-1.5 truncate rounded-lg border px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-50"
-				>
-					<span class="truncate">{periodoLabel}</span>
-					<ChevronDown
-						class="h-4 w-4 shrink-0 transition-transform duration-200 {periodoMenuOpen
-							? 'rotate-180'
-							: ''}"
-					/>
-				</button>
-
-				{#if periodoMenuOpen}
-					<!-- Overlay to close dropdown -->
-					<div
-						class="fixed inset-0 z-40"
-						onclick={() => (periodoMenuOpen = false)}
-						aria-hidden="true"
-					></div>
-
-					<!-- Dropdown -->
-					<div
-						class="absolute right-0 top-full z-50 mt-1 w-48 rounded-xl border bg-white shadow-lg"
-					>
-						{#each PERIODOS as p (p.value)}
-							<button
-								class="w-full px-4 py-2.5 text-left text-sm transition-colors hover:bg-gray-50 {periodo ===
-								p.value
-									? 'font-semibold text-[#2D6A4F]'
-									: 'text-gray-700'}"
-								onclick={() => {
-									periodo = p.value;
-									if (p.value !== 'personalizado') {
-										periodoMenuOpen = false;
-									}
-								}}
-							>
-								{p.label}
-							</button>
-						{/each}
-
-						{#if periodo === 'personalizado'}
-							<div class="border-t px-4 py-3 flex flex-col gap-2">
-								<div class="flex flex-col gap-1">
-									<label
-										for="desde"
-										class="text-xs font-medium text-gray-500"
-									>
-										Desde
-									</label>
-									<input
-										id="desde"
-										type="date"
-										bind:value={desdeStr}
-										class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
-									/>
-								</div>
-								<div class="flex flex-col gap-1">
-									<label
-										for="hasta"
-										class="text-xs font-medium text-gray-500"
-									>
-										Hasta
-									</label>
-									<input
-										id="hasta"
-										type="date"
-										bind:value={hastaStr}
-										class="rounded-lg border border-gray-300 px-2 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
-									/>
-								</div>
-							</div>
-						{/if}
-					</div>
-				{/if}
-			</div>
 		</div>
 	</div>
 
 	<!-- Main content -->
-	<main class="flex flex-col gap-4 px-4 pb-24 pt-3">
-		<!-- 1. Resultado principal card -->
-		<div
-			class="flex flex-col gap-1 rounded-2xl border p-4 {superavit
-				? 'border-emerald-200 bg-emerald-50'
-				: 'border-red-200 bg-red-50'}"
-		>
-			<div
-				class="flex items-center gap-1.5 text-xs font-medium {superavit
-					? 'text-emerald-700'
-					: 'text-red-600'}"
-			>
-				{#if superavit}
-					<TrendingUp class="h-4 w-4" />
-					<span>Superávit</span>
-				{:else}
-					<TrendingDown class="h-4 w-4" />
-					<span>Déficit</span>
-				{/if}
-				<span class="text-gray-400">·</span>
-				<span class="text-gray-500">{periodoLabel}</span>
-			</div>
-
-			<p
-				class="tabular-nums text-3xl font-bold {superavit
-					? 'text-emerald-700'
-					: 'text-red-600'}"
-			>
-				{superavit ? '+' : ''}{formatVES(resultado)}
-			</p>
-
-			<p class="mt-1 text-xs text-gray-500">
-				Ingresos {formatVES(totalIngresos)} · Egresos {formatVES(totalEgresos)}
-			</p>
+	<main class="flex flex-col gap-4 px-4 pb-24 pt-4">
+		<!-- Period type selector -->
+		<div class="flex rounded-xl border bg-white p-1 gap-1">
+			{#each (['monthly', 'quarterly', 'custom'] as const) as value (value)}
+				{@const labels: Record<string, string> = { monthly: 'Mensual', quarterly: 'Trimestral', custom: 'Personalizado' }}
+				<button
+					class="flex-1 rounded-lg py-2 text-sm font-medium transition-colors {periodoTipo === value
+						? 'bg-[#2D6A4F] text-white'
+						: 'text-gray-600 hover:bg-gray-50'}"
+					onclick={() => (periodoTipo = value)}
+				>
+					{labels[value]}
+				</button>
+			{/each}
 		</div>
 
-		<!-- 2. Empty state for incomplete custom range -->
-		{#if periodo === 'personalizado' && !rangoCompleto}
+		<!-- Period sub-selector -->
+		{#if periodoTipo === 'monthly'}
+			<div class="flex gap-2">
+				<select
+					bind:value={month}
+					class="flex-1 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
+				>
+					{#each MONTHS as m (m.value)}
+						<option value={m.value}>{m.label}</option>
+					{/each}
+				</select>
+				<select
+					bind:value={year}
+					class="w-28 rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
+				>
+					{#each YEARS as y (y)}
+						<option value={y}>{y}</option>
+					{/each}
+				</select>
+			</div>
+		{:else if periodoTipo === 'quarterly'}
+			<div class="flex flex-col gap-2">
+				<div class="flex gap-2">
+					{#each [1, 2, 3, 4] as q (q)}
+						<button
+							class="flex-1 rounded-lg border py-2 text-sm font-medium transition-colors {quarter === q
+								? 'border-[#2D6A4F] bg-[#2D6A4F] text-white'
+								: 'border-gray-300 bg-white text-gray-700 hover:bg-gray-50'}"
+							onclick={() => (quarter = q)}
+						>
+							T{q}
+						</button>
+					{/each}
+				</div>
+				<select
+					bind:value={year}
+					class="w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
+				>
+					{#each YEARS as y (y)}
+						<option value={y}>{y}</option>
+					{/each}
+				</select>
+			</div>
+		{:else}
+			<div class="flex flex-col gap-2">
+				<div class="flex flex-col gap-1">
+					<label for="desde" class="text-xs font-medium text-gray-500">Desde</label>
+					<input
+						id="desde"
+						type="date"
+						bind:value={customFrom}
+						class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
+					/>
+				</div>
+				<div class="flex flex-col gap-1">
+					<label for="hasta" class="text-xs font-medium text-gray-500">Hasta</label>
+					<input
+						id="hasta"
+						type="date"
+						bind:value={customTo}
+						class="rounded-lg border border-gray-300 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#2D6A4F]/30"
+					/>
+				</div>
+			</div>
+		{/if}
+
+		<!-- Incomplete custom range notice -->
+		{#if periodoTipo === 'custom' && !isCustomReady}
 			<div
 				class="flex items-center gap-2 rounded-xl border border-gray-200 bg-white p-4 text-sm text-gray-400"
 			>
@@ -286,146 +200,98 @@
 			</div>
 		{/if}
 
-		<!-- 3. Chart + breakdown (only if rangoCompleto) -->
-		{#if rangoCompleto}
-			<!-- Chart card -->
-			<div class="rounded-xl border bg-white p-4">
-				<div class="flex items-center justify-between">
-					<span class="text-sm font-semibold text-gray-800">
-						Ingresos vs. Egresos
-					</span>
-					<div class="flex items-center gap-3 text-xs text-gray-500">
-						<span class="flex items-center gap-1">
-							<span
-								class="inline-block h-2.5 w-2.5 rounded-full bg-[#2D6A4F]"
-							></span>
-							Ingresos
-						</span>
-						<span class="flex items-center gap-1">
-							<span
-								class="inline-block h-2.5 w-2.5 rounded-full bg-red-400"
-							></span>
-							Egresos
-						</span>
-					</div>
-				</div>
+		<!-- Loading skeleton -->
+		{#if $statementQuery.isPending && isCustomReady}
+			<div class="flex flex-col gap-3">
+				{#each [0, 1, 2] as i (i)}
+					<div class="h-24 animate-pulse rounded-2xl bg-gray-200"></div>
+				{/each}
+			</div>
+		{/if}
 
-				<!-- Bar chart -->
-				<div class="mt-2 flex items-end gap-1" style="height: 160px;">
-					{#each data as bar (bar.label)}
-						<div class="flex flex-1 flex-col items-center gap-0.5">
-							<div
-								class="flex w-full items-end gap-0.5"
-								style="height: 120px;"
-							>
-								<div
-									class="flex-1 rounded-t bg-[#2D6A4F] transition-all"
-									style="height: {((bar.ingresos / maxValor) * 100).toFixed(1)}%"
-									title="Ingresos: {formatVES(bar.ingresos)}"
-								></div>
-								<div
-									class="flex-1 rounded-t bg-red-400 transition-all"
-									style="height: {((bar.egresos / maxValor) * 100).toFixed(1)}%"
-									title="Egresos: {formatVES(bar.egresos)}"
-								></div>
-							</div>
-							<span class="mt-1 text-[10px] text-gray-400">{bar.label}</span>
-						</div>
-					{/each}
+		<!-- Error state -->
+		{#if $statementQuery.isError}
+			<div
+				class="flex items-center gap-3 rounded-xl border border-red-200 bg-red-50 p-4"
+			>
+				<AlertCircle class="h-5 w-5 shrink-0 text-red-500" />
+				<div class="flex flex-col gap-0.5">
+					<p class="text-sm font-medium text-red-700">
+						No se pudo cargar el estado de resultados
+					</p>
+					<p class="text-xs text-red-500">
+						{$statementQuery.error?.message ?? 'Error desconocido'}
+					</p>
 				</div>
 			</div>
+		{/if}
 
-			<!-- Breakdown card -->
-			<div class="divide-y rounded-xl border bg-white">
-				<!-- Ingresos section -->
-				<div class="flex flex-col gap-2 p-4">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-1.5">
-							<TrendingUp class="h-4 w-4 text-emerald-700" />
-							<span class="text-sm font-semibold text-emerald-700">
-								Ingresos totales
-							</span>
-						</div>
-						<span class="font-bold text-emerald-700">
-							{formatVES(totalIngresos)}
-						</span>
-					</div>
+		<!-- Results -->
+		{#if $statementQuery.isSuccess && isCustomReady}
+			<!-- Period info -->
+			<p class="px-1 text-xs text-gray-500">
+				Del {formatDate($statementQuery.data.periodo.from)} al {formatDate(
+					$statementQuery.data.periodo.to,
+				)}
+			</p>
 
-					{#each DESGLOSE_INGRESOS as item (item.origen)}
-						{@const pct = ((item.monto / totalIngresos) * 100).toFixed(0)}
-						{@const Icon = getIngresoIcon(item.origen)}
-						<div class="flex items-center gap-2">
-							<span
-								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border {item.color}"
-							>
-								<Icon class="h-3.5 w-3.5" />
-							</span>
-							<span class="flex-1 text-sm text-gray-700">{item.origen}</span>
-							<span class="text-sm font-medium text-gray-900">
-								{formatVES(item.monto)}
-							</span>
-							<span
-								class="rounded border px-1 text-[10px] {item.color}"
-							>
-								{pct}%
-							</span>
-						</div>
-					{/each}
+			<!-- Resultado neto (hero card) -->
+			<div
+				class="flex flex-col gap-1 rounded-2xl border p-4 {superavit
+					? 'border-emerald-200 bg-emerald-50'
+					: 'border-red-200 bg-red-50'}"
+			>
+				<div
+					class="flex items-center gap-1.5 text-xs font-medium {superavit
+						? 'text-emerald-700'
+						: 'text-red-600'}"
+				>
+					{#if superavit}
+						<TrendingUp class="h-4 w-4" />
+						<span>Superávit</span>
+					{:else}
+						<TrendingDown class="h-4 w-4" />
+						<span>Déficit</span>
+					{/if}
+					<span class="text-gray-400">·</span>
+					<span class="text-gray-500">{periodoLabel}</span>
 				</div>
+				<p
+					class="tabular-nums text-3xl font-bold {superavit
+						? 'text-emerald-700'
+						: 'text-red-600'}"
+				>
+					{superavit ? '+' : ''}{formatVES(resultado)}
+				</p>
+				<p class="mt-1 text-xs text-gray-500">Resultado neto del período</p>
+			</div>
 
-				<!-- Egresos section -->
-				<div class="flex flex-col gap-2 p-4">
-					<div class="flex items-center justify-between">
-						<div class="flex items-center gap-1.5">
-							<TrendingDown class="h-4 w-4 text-red-600" />
-							<span class="text-sm font-semibold text-red-600">
-								Egresos totales
-							</span>
-						</div>
-						<span class="font-bold text-red-600">
-							{formatVES(totalEgresos)}
-						</span>
-					</div>
-
-					{#each DESGLOSE_EGRESOS as item (item.origen)}
-						{@const pct = ((item.monto / totalEgresos) * 100).toFixed(0)}
-						<div class="flex items-center gap-2">
-							<span
-								class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md border {item.color}"
-							>
-								<FileText class="h-3.5 w-3.5" />
-							</span>
-							<span class="flex-1 text-sm text-gray-700">{item.origen}</span>
-							<span class="text-sm font-medium text-gray-900">
-								{formatVES(item.monto)}
-							</span>
-							<span class="rounded border px-1 text-[10px] {item.color}">
-								{pct}%
-							</span>
-						</div>
-					{/each}
-				</div>
-
-				<!-- Resultado neto row -->
-				<div class="flex items-center justify-between p-4">
+			<!-- KPI cards -->
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<!-- Ingresos -->
+				<div
+					class="flex flex-col gap-1 rounded-2xl border border-emerald-200 bg-white p-4"
+				>
 					<div class="flex items-center gap-1.5">
-						{#if superavit}
-							<TrendingUp class="h-4 w-4 text-emerald-700" />
-							<span class="text-sm font-bold text-emerald-700">
-								Resultado neto
-							</span>
-						{:else}
-							<TrendingDown class="h-4 w-4 text-red-600" />
-							<span class="text-sm font-bold text-red-600">Resultado neto</span>
-						{/if}
+						<TrendingUp class="h-4 w-4 text-emerald-600" />
+						<span class="text-xs font-medium text-emerald-700">Total ingresos</span>
 					</div>
-					<span
-						class="tabular-nums text-base font-bold {superavit
-							? 'text-emerald-700'
-							: 'text-red-600'}"
-					>
-						{superavit ? '+' : ''}{formatVES(resultado)}
-					</span>
+					<p class="tabular-nums text-2xl font-bold text-emerald-700">
+						{formatVES(totalIngresos)}
+					</p>
+				</div>
+
+				<!-- Egresos -->
+				<div
+					class="flex flex-col gap-1 rounded-2xl border border-red-200 bg-white p-4"
+				>
+					<div class="flex items-center gap-1.5">
+						<TrendingDown class="h-4 w-4 text-red-500" />
+						<span class="text-xs font-medium text-red-600">Total egresos</span>
+					</div>
+					<p class="tabular-nums text-2xl font-bold text-red-600">
+						{formatVES(totalEgresos)}
+					</p>
 				</div>
 			</div>
 		{/if}

@@ -1,18 +1,58 @@
 <script lang="ts">
   import { ArrowLeft, CheckCircle2 } from 'lucide-svelte';
+  import { page } from '$app/state';
+  import { api } from '$lib/api';
+  import { createQuery, createMutation, useQueryClient } from '@tanstack/svelte-query';
 
-  const PACIENTE = {
-    id: '1',
-    nombre: 'Ana Sofía',
-    apellido: 'Ramírez Torres',
-    cedula: 'V-12.345.678',
-    fechaNac: '1985-06-15',
-    sexo: 'F',
-    telefono: '0414-1234567',
-    direccion: 'Urb. San Félix, Calle 3, Casa 12',
-  };
+  const queryClient = useQueryClient();
 
-  let form = $state({ ...PACIENTE });
+  const patientQuery = createQuery({
+    get queryKey() {
+      return ['patient', page.params.id];
+    },
+    get queryFn() {
+      const id: string = page.params.id ?? '';
+      return async () => {
+        const res = await api.api.medical.patients({ id }).get();
+        if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al cargar paciente');
+        return res.data!;
+      };
+    },
+    get enabled() {
+      return !!page.params.id;
+    },
+  });
+
+  const patientMutation = createMutation({
+    mutationFn: async (body: {
+      nombre?: string;
+      cedula?: string;
+      fechaNac?: string;
+      genero?: string;
+      telefono?: string;
+      lugarNac?: string;
+      residencia?: string;
+    }) => {
+      const id: string = page.params.id ?? '';
+      const res = await api.api.medical.patients({ id }).patch(body);
+      if (res.error) throw new Error((res.error as { message?: string }).message ?? 'Error al guardar');
+      return res.data;
+    },
+    onSuccess: () => {
+      saved = true;
+      queryClient.invalidateQueries({ queryKey: ['patient', page.params.id] });
+    },
+  });
+
+  // Derive initial form values from query data; overridable because declared with `let`
+  let nombre = $derived($patientQuery.data?.nombre ?? '');
+  let cedula = $derived($patientQuery.data?.cedula ?? '');
+  let fechaNac = $derived($patientQuery.data?.fechaNac ?? '');
+  let genero = $derived($patientQuery.data?.genero ?? '');
+  let telefono = $derived($patientQuery.data?.telefono ?? '');
+  let lugarNac = $derived($patientQuery.data?.lugarNac ?? '');
+  let residencia = $derived($patientQuery.data?.residencia ?? '');
+
   let errors = $state<Record<string, string>>({});
   let saved = $state(false);
 
@@ -26,15 +66,22 @@
   function handleGuardar() {
     errors = {};
 
-    if (!form.nombre.trim()) errors.nombre = 'El nombre es requerido.';
-    if (!form.apellido.trim()) errors.apellido = 'El apellido es requerido.';
-    if (!form.cedula.trim()) errors.cedula = 'La cédula es requerida.';
-    if (!form.fechaNac) errors.fechaNac = 'La fecha de nacimiento es requerida.';
-    if (!form.sexo) errors.sexo = 'El sexo es requerido.';
+    if (!nombre.trim()) errors.nombre = 'El nombre es requerido.';
+    if (!cedula.trim()) errors.cedula = 'La cédula es requerida.';
+    if (!fechaNac) errors.fechaNac = 'La fecha de nacimiento es requerida.';
+    if (!genero) errors.genero = 'El género es requerido.';
 
     if (Object.keys(errors).length > 0) return;
 
-    saved = true;
+    $patientMutation.mutate({
+      nombre: nombre.trim(),
+      cedula: cedula.trim(),
+      fechaNac,
+      genero,
+      telefono: telefono.trim() || undefined,
+      lugarNac: lugarNac.trim() || undefined,
+      residencia: residencia.trim() || undefined,
+    });
   }
 </script>
 
@@ -42,7 +89,7 @@
   <!-- Sticky header -->
   <header class="sticky top-0 z-10 flex items-center gap-3 border-b bg-white px-4 py-3">
     <a
-      href="/medical/patients/{PACIENTE.id}"
+      href="/medical/patients/{page.params.id}"
       class="shrink-0 rounded-lg p-1.5 text-gray-500 hover:bg-gray-100"
     >
       <ArrowLeft class="h-5 w-5" />
@@ -52,7 +99,40 @@
     </h1>
   </header>
 
-  {#if saved}
+  {#if $patientQuery.isPending}
+    <!-- Loading skeleton -->
+    <main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-24 pt-4">
+      <div class="flex flex-col gap-4 rounded-xl border bg-white p-4">
+        <div class="h-4 w-32 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+        <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+        <div class="grid grid-cols-2 gap-3">
+          <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+          <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+        </div>
+        <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+      </div>
+      <div class="flex flex-col gap-4 rounded-xl border bg-white p-4">
+        <div class="h-4 w-24 animate-pulse rounded bg-gray-200"></div>
+        <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+        <div class="h-9 animate-pulse rounded-lg bg-gray-200"></div>
+      </div>
+    </main>
+  {:else if $patientQuery.isError}
+    <!-- Error state -->
+    <div class="flex flex-1 flex-col items-center justify-center gap-4 px-4 py-16">
+      <p class="text-base font-semibold text-gray-900">No se pudo cargar el paciente</p>
+      <p class="text-sm text-gray-500">
+        {$patientQuery.error?.message ?? 'Error desconocido'}
+      </p>
+      <button
+        onclick={() => $patientQuery.refetch()}
+        class="rounded-lg bg-[#2D6A4F] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
+      >
+        Reintentar
+      </button>
+    </div>
+  {:else if saved}
     <!-- Success state -->
     <div class="flex flex-1 flex-col items-center justify-center gap-5 px-4 py-16">
       <div
@@ -62,7 +142,7 @@
       </div>
       <p class="text-lg font-semibold text-gray-900">Cambios guardados</p>
       <a
-        href="/medical/patients/{PACIENTE.id}"
+        href="/medical/patients/{page.params.id}"
         class="rounded-lg bg-[#2D6A4F] px-6 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
       >
         Volver al paciente
@@ -71,42 +151,31 @@
   {:else}
     <!-- Form -->
     <main class="mx-auto flex w-full max-w-2xl flex-col gap-4 px-4 pb-24 pt-4">
+      {#if $patientMutation.isError}
+        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {$patientMutation.error?.message ?? 'Error al guardar los cambios'}
+        </div>
+      {/if}
+
       <!-- Datos personales -->
       <div class="flex flex-col gap-4 rounded-xl border bg-white p-4">
         <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Datos personales</p>
 
-        <!-- Nombre + Apellido -->
-        <div class="grid grid-cols-2 gap-3">
-          <div class="flex flex-col gap-1">
-            <label for="nombre" class={labelClass}>
-              Nombre <span class="text-red-500">*</span>
-            </label>
-            <input
-              id="nombre"
-              type="text"
-              bind:value={form.nombre}
-              placeholder="Nombre"
-              class={inputClass}
-            />
-            {#if errors.nombre}
-              <p class={errorClass}>{errors.nombre}</p>
-            {/if}
-          </div>
-          <div class="flex flex-col gap-1">
-            <label for="apellido" class={labelClass}>
-              Apellido <span class="text-red-500">*</span>
-            </label>
-            <input
-              id="apellido"
-              type="text"
-              bind:value={form.apellido}
-              placeholder="Apellido"
-              class={inputClass}
-            />
-            {#if errors.apellido}
-              <p class={errorClass}>{errors.apellido}</p>
-            {/if}
-          </div>
+        <!-- Nombre -->
+        <div class="flex flex-col gap-1">
+          <label for="nombre" class={labelClass}>
+            Nombre completo <span class="text-red-500">*</span>
+          </label>
+          <input
+            id="nombre"
+            type="text"
+            bind:value={nombre}
+            placeholder="Nombre y apellido"
+            class={inputClass}
+          />
+          {#if errors.nombre}
+            <p class={errorClass}>{errors.nombre}</p>
+          {/if}
         </div>
 
         <!-- Cedula -->
@@ -117,7 +186,7 @@
           <input
             id="cedula"
             type="text"
-            bind:value={form.cedula}
+            bind:value={cedula}
             placeholder="V-00.000.000"
             class={inputClass}
           />
@@ -126,7 +195,7 @@
           {/if}
         </div>
 
-        <!-- Fecha de nacimiento + Sexo -->
+        <!-- Fecha de nacimiento + Género -->
         <div class="grid grid-cols-2 gap-3">
           <div class="flex flex-col gap-1">
             <label for="fechaNac" class={labelClass}>
@@ -135,7 +204,7 @@
             <input
               id="fechaNac"
               type="date"
-              bind:value={form.fechaNac}
+              bind:value={fechaNac}
               class={inputClass}
             />
             {#if errors.fechaNac}
@@ -143,18 +212,30 @@
             {/if}
           </div>
           <div class="flex flex-col gap-1">
-            <label for="sexo" class={labelClass}>
-              Sexo <span class="text-red-500">*</span>
+            <label for="genero" class={labelClass}>
+              Género <span class="text-red-500">*</span>
             </label>
-            <select id="sexo" bind:value={form.sexo} class={selectClass}>
+            <select id="genero" bind:value={genero} class={selectClass}>
               <option value="">Seleccionar</option>
               <option value="M">Masculino</option>
               <option value="F">Femenino</option>
             </select>
-            {#if errors.sexo}
-              <p class={errorClass}>{errors.sexo}</p>
+            {#if errors.genero}
+              <p class={errorClass}>{errors.genero}</p>
             {/if}
           </div>
+        </div>
+
+        <!-- Lugar de nacimiento -->
+        <div class="flex flex-col gap-1">
+          <label for="lugarNac" class={labelClass}>Lugar de nacimiento</label>
+          <input
+            id="lugarNac"
+            type="text"
+            bind:value={lugarNac}
+            placeholder="Ciudad o estado"
+            class={inputClass}
+          />
         </div>
       </div>
 
@@ -162,25 +243,25 @@
       <div class="flex flex-col gap-4 rounded-xl border bg-white p-4">
         <p class="text-xs font-medium uppercase tracking-wide text-gray-400">Contacto</p>
 
-        <!-- Telefono -->
+        <!-- Teléfono -->
         <div class="flex flex-col gap-1">
           <label for="telefono" class={labelClass}>Teléfono</label>
           <input
             id="telefono"
             type="text"
-            bind:value={form.telefono}
+            bind:value={telefono}
             placeholder="0414-1234567"
             class={inputClass}
           />
         </div>
 
-        <!-- Direccion -->
+        <!-- Residencia -->
         <div class="flex flex-col gap-1">
-          <label for="direccion" class={labelClass}>Dirección</label>
+          <label for="residencia" class={labelClass}>Dirección de residencia</label>
           <input
-            id="direccion"
+            id="residencia"
             type="text"
-            bind:value={form.direccion}
+            bind:value={residencia}
             placeholder="Calle, sector, casa/apto"
             class={inputClass}
           />
@@ -189,20 +270,19 @@
     </main>
 
     <!-- Fixed bottom bar -->
-    <div
-      class="fixed bottom-0 left-0 right-0 flex gap-2 border-t bg-white px-4 py-3 md:pl-64"
-    >
+    <div class="fixed bottom-0 left-0 right-0 flex gap-2 border-t bg-white px-4 py-3 md:pl-64">
       <a
-        href="/medical/patients/{PACIENTE.id}"
+        href="/medical/patients/{page.params.id}"
         class="flex-1 rounded-lg border border-gray-300 px-4 py-2.5 text-center text-sm font-medium text-gray-700 hover:bg-gray-50"
       >
         Cancelar
       </a>
       <button
         onclick={handleGuardar}
-        class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#245a41]"
+        disabled={$patientMutation.isPending}
+        class="flex-1 rounded-lg bg-[#2D6A4F] px-4 py-2.5 text-sm font-medium text-white hover:bg-[#245a41] disabled:opacity-60"
       >
-        Guardar cambios
+        {$patientMutation.isPending ? 'Guardando...' : 'Guardar cambios'}
       </button>
     </div>
   {/if}

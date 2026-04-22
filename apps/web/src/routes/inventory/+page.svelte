@@ -12,28 +12,50 @@
     X,
   } from 'lucide-svelte';
   import { Drawer } from 'vaul-svelte';
+  import { createQuery } from '@tanstack/svelte-query';
   import StockIndicator from '$lib/components/custom/stock-indicator.svelte';
   import ExpiryIndicator from '$lib/components/custom/expiry-indicator.svelte';
+  import { api } from '$lib/api';
 
-  const INSUMOS = [
-    { id: 'inv1', tipo: 'medicamento', nombre: 'Paracetamol 500mg', presentacion: 'Caja x 20 tab', stockDisponible: 8, cantidadInicial: 15, fechaVencimiento: '2026-06-30', categoria: 'Analgésico' },
-    { id: 'inv2', tipo: 'medicamento', nombre: 'Ibuprofeno 400mg', presentacion: 'Caja x 10 tab', stockDisponible: 2, cantidadInicial: 10, fechaVencimiento: '2026-09-15', categoria: 'Antiinflamatorio' },
-    { id: 'inv3', tipo: 'medicamento', nombre: 'Amoxicilina 500mg', presentacion: 'Caja x 12 cap', stockDisponible: 0, cantidadInicial: 5, fechaVencimiento: '2026-03-01', categoria: 'Antibiótico' },
-    { id: 'inv4', tipo: 'material', nombre: 'Guantes de látex', presentacion: 'Caja x 100 uds', stockDisponible: 4, cantidadInicial: 10, fechaVencimiento: '2027-01-01', categoria: 'Protección' },
-    { id: 'inv5', tipo: 'medicamento', nombre: 'Vitamina C 500mg', presentacion: 'Frasco x 30 comp', stockDisponible: 9, cantidadInicial: 9, fechaVencimiento: '2026-12-31', categoria: 'Vitaminas' },
-    { id: 'inv6', tipo: 'material', nombre: 'Gasas estériles', presentacion: 'Caja x 50 uds', stockDisponible: 1, cantidadInicial: 8, fechaVencimiento: '2027-06-30', categoria: 'Curaciones' },
-    { id: 'inv7', tipo: 'material', nombre: 'Jeringas 5ml', presentacion: 'Caja x 100 uds', stockDisponible: 6, cantidadInicial: 6, fechaVencimiento: '2028-01-01', categoria: 'Inyectables' },
-  ];
+  function getNombreInsumo(s: any): string {
+    if (s.materialQuirurgico) return s.materialQuirurgico.nombre;
+    if (s.presentacionMedicamento) {
+      const med = s.presentacionMedicamento.medicamento;
+      if (med.marca.esGenerico && med.principiosActivos.length > 0) {
+        return med.principiosActivos.map((pa: any) => `${pa.principioActivo.nombre} ${pa.concentracion}`).join(' + ') + ` — ${med.marca.laboratorio.nombre}`;
+      }
+      return med.marca.nombre;
+    }
+    return 'Sin nombre';
+  }
+
+  function getPresentacion(s: any): string {
+    if (s.presentacionMedicamento) return s.presentacionMedicamento.empaque.nombre;
+    return '';
+  }
+
+  function getTipo(s: any): 'medicamento' | 'material' {
+    return s.tipo === 'MEDICAMENTO' ? 'medicamento' : 'material';
+  }
+
+  const suppliesQuery = createQuery({
+    queryKey: ['supplies'],
+    queryFn: async () => {
+      const res = await api.api.inventory.supplies.get();
+      if (res.error) throw new Error((res.error as any).message ?? 'Error al cargar insumos');
+      return res.data ?? [];
+    },
+  });
 
   let search = $state('');
-  let tipoFiltro = $state<'all' | 'medicamento' | 'material'>('all');
+  let tipoFiltro = $state<'all' | 'MEDICAMENTO' | 'MATERIAL'>('all');
   let stockFiltro = $state<'all' | 'ok' | 'low' | 'out'>('all');
   let orden = $state<'nombre' | 'stock' | 'vencimiento'>('nombre');
   let filtrosDrawerOpen = $state(false);
 
   const alertaItems = $derived(
-    INSUMOS.filter((item) => {
-      const ratio = item.cantidadInicial > 0 ? item.stockDisponible / item.cantidadInicial : 0;
+    ($suppliesQuery.data ?? []).filter((item: any) => {
+      const ratio = item.cantidad > 0 ? item.stockDisponible / item.cantidad : 0;
       const dias = Math.floor(DateTime.fromISO(item.fechaVencimiento).diffNow('days').days);
       return item.stockDisponible === 0 || ratio < 0.25 || dias <= 90;
     })
@@ -44,27 +66,22 @@
   );
 
   const filtered = $derived((() => {
-    let items = INSUMOS.slice();
+    let items = ($suppliesQuery.data ?? []).slice();
 
-    // Filter by tipo
     if (tipoFiltro !== 'all') {
-      items = items.filter((i) => i.tipo === tipoFiltro);
+      items = items.filter((i: any) => i.tipo === tipoFiltro);
     }
 
-    // Filter by search (nombre or categoria)
     const q = search.trim().toLowerCase();
     if (q) {
-      items = items.filter(
-        (i) =>
-          i.nombre.toLowerCase().includes(q) ||
-          i.categoria.toLowerCase().includes(q)
+      items = items.filter((i: any) =>
+        getNombreInsumo(i).toLowerCase().includes(q)
       );
     }
 
-    // Filter by stock
     if (stockFiltro !== 'all') {
-      items = items.filter((i) => {
-        const ratio = i.cantidadInicial > 0 ? i.stockDisponible / i.cantidadInicial : 0;
+      items = items.filter((i: any) => {
+        const ratio = i.cantidad > 0 ? i.stockDisponible / i.cantidad : 0;
         if (stockFiltro === 'out') return i.stockDisponible === 0;
         if (stockFiltro === 'low') return i.stockDisponible > 0 && ratio < 0.25;
         if (stockFiltro === 'ok') return i.stockDisponible > 0 && ratio >= 0.25;
@@ -72,12 +89,11 @@
       });
     }
 
-    // Sort
-    items.sort((a, b) => {
+    items.sort((a: any, b: any) => {
       if (orden === 'stock') return a.stockDisponible - b.stockDisponible;
       if (orden === 'vencimiento')
         return DateTime.fromISO(a.fechaVencimiento).toMillis() - DateTime.fromISO(b.fechaVencimiento).toMillis();
-      return a.nombre.localeCompare(b.nombre);
+      return getNombreInsumo(a).localeCompare(getNombreInsumo(b));
     });
 
     return items;
@@ -98,8 +114,8 @@
   </header>
 
   <main class="flex-1 px-4 py-4 max-w-2xl mx-auto w-full">
-    <!-- Alert banner -->
-    {#if alertaItems.length > 0}
+    <!-- Alert banner (hidden while loading) -->
+    {#if !$suppliesQuery.isPending && alertaItems.length > 0}
       <div class="flex items-start gap-2 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 mb-4 text-sm text-amber-800">
         <AlertTriangle class="size-4 shrink-0 mt-0.5" />
         <p>
@@ -113,7 +129,7 @@
       <Search class="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-gray-400 pointer-events-none" />
       <input
         type="search"
-        placeholder="Buscar por nombre o categoría…"
+        placeholder="Buscar por nombre…"
         bind:value={search}
         class="w-full pl-9 pr-4 py-2 text-sm rounded-lg border border-gray-300 bg-white focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary transition"
       />
@@ -123,8 +139,8 @@
     <div class="flex items-center gap-2 mb-3">
       {#each [
         { value: 'all', label: 'Todos' },
-        { value: 'medicamento', label: 'Medicamentos' },
-        { value: 'material', label: 'Materiales' },
+        { value: 'MEDICAMENTO', label: 'Medicamentos' },
+        { value: 'MATERIAL', label: 'Materiales' },
       ] as chip (chip.value)}
         <button
           type="button"
@@ -143,7 +159,13 @@
 
     <!-- Count + Filtros button -->
     <div class="flex items-center justify-between mb-3">
-      <p class="text-xs text-gray-500">{filtered.length} insumo(s)</p>
+      <p class="text-xs text-gray-500">
+        {#if $suppliesQuery.isPending}
+          Cargando…
+        {:else}
+          {filtered.length} insumo(s)
+        {/if}
+      </p>
 
       <button
         type="button"
@@ -241,12 +263,36 @@
         </Drawer.Portal>
     </Drawer.Root>
 
-    <!-- Item list or empty state -->
-    {#if filtered.length === 0}
+    <!-- Loading skeletons -->
+    {#if $suppliesQuery.isPending}
+      <ul class="flex flex-col gap-3">
+        {#each [1, 2, 3] as _ (_)}
+          <li class="flex items-center gap-3 rounded-xl border border-gray-200 bg-white p-4">
+            <div class="size-9 shrink-0 rounded-lg bg-gray-200 animate-pulse"></div>
+            <div class="flex-1 min-w-0 space-y-2">
+              <div class="h-4 w-2/3 rounded bg-gray-200 animate-pulse"></div>
+              <div class="h-3 w-1/3 rounded bg-gray-200 animate-pulse"></div>
+              <div class="h-3 w-1/2 rounded bg-gray-200 animate-pulse"></div>
+            </div>
+          </li>
+        {/each}
+      </ul>
+
+    <!-- Error panel -->
+    {:else if $suppliesQuery.isError}
+      <div class="flex flex-col items-center justify-center gap-3 py-20 text-red-500">
+        <AlertTriangle class="size-10 stroke-[1.5]" />
+        <p class="text-sm">No se pudo cargar el inventario. Intenta de nuevo.</p>
+      </div>
+
+    <!-- Empty state -->
+    {:else if filtered.length === 0}
       <div class="flex flex-col items-center justify-center gap-3 py-20 text-gray-400">
         <Package class="size-10 stroke-[1.5]" />
         <p class="text-sm">Sin insumos en el inventario</p>
       </div>
+
+    <!-- Item list -->
     {:else}
       <ul class="flex flex-col gap-3">
         {#each filtered as item (item.id)}
@@ -259,12 +305,12 @@
               <span
                 class={[
                   'shrink-0 rounded-lg p-2',
-                  item.tipo === 'medicamento'
+                  item.tipo === 'MEDICAMENTO'
                     ? 'bg-primary/10 text-primary'
                     : 'bg-blue-100 text-blue-600',
                 ].join(' ')}
               >
-                {#if item.tipo === 'medicamento'}
+                {#if item.tipo === 'MEDICAMENTO'}
                   <Pill class="size-5" />
                 {:else}
                   <Stethoscope class="size-5" />
@@ -273,10 +319,10 @@
 
               <!-- Info -->
               <div class="flex-1 min-w-0">
-                <p class="font-medium text-gray-900 truncate">{item.nombre}</p>
-                <p class="text-xs text-gray-500 mt-0.5">{item.presentacion}</p>
+                <p class="font-medium text-gray-900 truncate">{getNombreInsumo(item)}</p>
+                <p class="text-xs text-gray-500 mt-0.5">{getPresentacion(item)}</p>
                 <div class="flex flex-wrap items-center gap-1.5 mt-1.5">
-                  <StockIndicator stockDisponible={item.stockDisponible} cantidadInicial={item.cantidadInicial} />
+                  <StockIndicator stockDisponible={item.stockDisponible} cantidadInicial={item.cantidad} />
                   <ExpiryIndicator fechaVencimiento={item.fechaVencimiento} />
                 </div>
               </div>
