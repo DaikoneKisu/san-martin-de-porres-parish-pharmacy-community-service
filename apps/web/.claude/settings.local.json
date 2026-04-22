@@ -22,7 +22,8 @@
       "WebFetch(domain:www.better-auth.com)",
       "WebSearch",
       "WebFetch(domain:better-auth.com)",
-      "WebFetch(domain:github.com)"
+      "WebFetch(domain:github.com)",
+      "Bash(node -e \"const pkg = require\\('./node_modules/@elysiajs/eden/package.json'\\); console.log\\(pkg.version\\)\")"
     ]
   },
   "enabledPlugins": {
